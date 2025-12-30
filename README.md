@@ -5908,3 +5908,1211 @@ warmCache();
 ```
 
 ---
+
+## Database Scaling Strategies
+
+### Vertical vs Horizontal Scaling
+
+#### Vertical Scaling (Scale Up) ⬆️
+
+**Definition:** Add more power to a single server
+
+```
+Before:              After:
+┌─────────┐         ┌──────────┐
+│ 4 CPU   │    →    │ 16 CPU   │
+│ 16GB RAM│         │ 128GB RAM│
+│ 1TB SSD │         │ 10TB SSD │
+└─────────┘         └──────────┘
+  $200/mo            $2000/mo
+```
+
+**✅ Pros:**
+- **Simple** - No code changes required
+- **No synchronization** - Single source of truth
+- **Easier maintenance** - One server to manage
+- **Consistent** - No replication lag
+- **Transactions** - ACID works perfectly
+
+**❌ Cons:**
+- **Expensive** - Enterprise hardware costs scale non-linearly
+- **Limited ceiling** - Physical limits (CPU, RAM, disk)
+- **Single point of failure** - Server down = everything down
+- **Downtime** - Upgrades require restart
+- **Diminishing returns** - 2x cost ≠ 2x performance
+
+**When to Use:**
+- Small to medium applications
+- Budget/timeline constraints
+- Simple architecture preferred
+- Strong consistency required
+- < 10,000 concurrent users
+
+---
+
+#### Horizontal Scaling (Scale Out) ➡️
+
+**Definition:** Add more servers (distributed system)
+
+```
+Before:              After:
+┌─────────┐         ┌─────────┐  ┌─────────┐  ┌─────────┐
+│ Server  │    →    │ Server1 │  │ Server2 │  │ Server3 │
+│         │         │         │  │         │  │         │
+└─────────┘         └─────────┘  └─────────┘  └─────────┘
+  $200/mo             $200/mo      $200/mo      $200/mo
+                      = $600/mo for 3x capacity
+```
+
+**✅ Pros:**
+- **Unlimited scaling** - Add servers as needed
+- **Cheaper** - Commodity hardware
+- **No downtime** - Rolling updates
+- **Fault tolerant** - One fails, others work
+- **Geographic distribution** - Servers in multiple regions
+
+**❌ Cons:**
+- **Complex** - Data synchronization required
+- **Application changes** - Code must handle distributed data
+- **More infrastructure** - Load balancers, monitoring, etc.
+- **CAP theorem** - Must choose between consistency and availability
+- **Network latency** - Inter-server communication overhead
+
+**When to Use:**
+- Large applications (millions of users)
+- Need high availability (99.99%+)
+- Expect rapid growth
+- Geographic distribution needed
+- Read-heavy workloads
+
+---
+
+## Replication (Read Scaling)
+
+### SQL Replication (PostgreSQL/MySQL)
+
+**Problem:** 90% of operations are reads, but only 1 server handles them.
+
+**Solution:** Create read-only copies (replicas)
+
+```
+                    ┌─────────────┐
+                    │   PRIMARY   │ (Master)
+                    │   WRITES    │
+                    └──────┬──────┘
+                           │
+                   Async Replication
+                    (WAL Streaming)
+                           │
+         ┌─────────────────┼─────────────────┐
+         │                 │                 │
+    ┌────▼─────┐      ┌────▼─────┐      ┌────▼─────┐
+    │ Replica1 │      │ Replica2 │      │ Replica3 │
+    │ (READS)  │      │ (READS)  │      │ (READS)  │
+    └──────────┘      └──────────┘      └──────────┘
+      US East           EU West            Asia
+```
+
+#### How It Works
+
+**1. Write-Ahead Log (WAL) Streaming**
+```
+Primary:
+1. Client writes data
+2. Write to WAL first
+3. Apply to database
+4. Stream WAL to replicas
+
+Replicas:
+1. Receive WAL stream
+2. Apply changes to local database
+3. Serve read queries
+```
+
+#### PostgreSQL Replication Setup
+
+```sql
+-- ==========================================
+-- PRIMARY SERVER Configuration
+-- ==========================================
+
+-- postgresql.conf
+wal_level = replica                    # Enable replication
+max_wal_senders = 3                    # Number of replicas
+wal_keep_size = 1GB                    # Keep WAL for replicas
+hot_standby = on                       # Allow reads on standby
+archive_mode = on                      # Enable WAL archiving
+archive_command = 'cp %p /archive/%f'  # Archive command
+
+-- Create replication user
+CREATE USER replicator REPLICATION LOGIN ENCRYPTED PASSWORD 'password';
+
+-- pg_hba.conf (allow replication connections)
+host replication replicator 10.0.0.0/8 md5
+
+-- ==========================================
+-- REPLICA SERVER Setup
+-- ==========================================
+
+-- Stop PostgreSQL on replica
+systemctl stop postgresql
+
+-- Remove existing data
+rm -rf /var/lib/postgresql/14/main/*
+
+-- Create base backup from primary
+pg_basebackup -h primary.db.example.com \
+  -D /var/lib/postgresql/14/main \
+  -U replicator \
+  -P \
+  -X stream
+
+-- Create standby.signal file
+touch /var/lib/postgresql/14/main/standby.signal
+
+-- postgresql.auto.conf (or recovery.conf for older versions)
+primary_conninfo = 'host=primary.db.example.com port=5432 user=replicator password=password'
+primary_slot_name = 'replica1_slot'
+
+-- Start replica
+systemctl start postgresql
+
+-- ==========================================
+-- Verify Replication
+-- ==========================================
+
+-- On primary: Check replication status
+SELECT * FROM pg_stat_replication;
+
+-- On replica: Check if receiving
+SELECT pg_is_in_recovery();  -- Should return true
+```
+
+#### Application Implementation
+
+```javascript
+const { Pool } = require('pg');
+
+// Primary database (writes)
+const primary = new Pool({
+  host: 'primary.db.example.com',
+  database: 'mydb',
+  user: 'app_user',
+  password: 'password',
+  max: 20
+});
+
+// Read replicas
+const replicas = [
+  new Pool({ host: 'replica1.db.example.com', database: 'mydb', user: 'app_user', password: 'password' }),
+  new Pool({ host: 'replica2.db.example.com', database: 'mydb', user: 'app_user', password: 'password' }),
+  new Pool({ host: 'replica3.db.example.com', database: 'mydb', user: 'app_user', password: 'password' })
+];
+
+let replicaIndex = 0;
+
+function getReadReplica() {
+  // Round-robin load balancing
+  const replica = replicas[replicaIndex];
+  replicaIndex = (replicaIndex + 1) % replicas.length;
+  return replica;
+}
+
+// Write to primary
+async function createUser(userData) {
+  return await primary.query(
+    'INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *',
+    [userData.name, userData.email]
+  );
+}
+
+// Read from replica
+async function getUsers() {
+  const replica = getReadReplica();
+  return await replica.query(
+    'SELECT * FROM users ORDER BY created_at DESC LIMIT 20'
+  );
+}
+
+// Read from primary if consistency critical
+async function getUserBalance(userId) {
+  // Financial data - must be from primary!
+  return await primary.query(
+    'SELECT balance FROM accounts WHERE user_id = $1',
+    [userId]
+  );
+}
+
+// Read-after-write pattern
+async function createAndGetUser(userData) {
+  // 1. Write to primary
+  const result = await primary.query(
+    'INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id',
+    [userData.name, userData.email]
+  );
+  
+  const userId = result.rows[0].id;
+  
+  // 2. Read from primary (ensure we see our write)
+  const user = await primary.query(
+    'SELECT * FROM users WHERE id = $1',
+    [userId]
+  );
+  
+  return user.rows[0];
+}
+```
+
+---
+
+### MongoDB Replication (Replica Sets)
+
+```
+                    ┌─────────────┐
+                    │   PRIMARY   │
+                    │   WRITES    │
+                    └──────┬──────┘
+                           │
+                      Oplog Sync
+                           │
+         ┌─────────────────┼─────────────────┐
+         │                 │                 │
+    ┌────▼─────┐     ┌────▼─────┐     ┌────▼─────┐
+    │Secondary1│     │Secondary2│     │Secondary3│
+    │  READS   │     │  READS   │     │  READS   │
+    └──────────┘     └──────────┘     └──────────┘
+```
+
+#### MongoDB Replica Set Setup
+
+```javascript
+// ==========================================
+// Initialize Replica Set
+// ==========================================
+
+// Connect to first node
+mongo mongodb://localhost:27017
+
+// Initialize replica set
+rs.initiate({
+  _id: "myReplicaSet",
+  members: [
+    { _id: 0, host: "mongo1.example.com:27017", priority: 2 },  // Primary (higher priority)
+    { _id: 1, host: "mongo2.example.com:27017", priority: 1 },  // Secondary
+    { _id: 2, host: "mongo3.example.com:27017", priority: 1 }   // Secondary
+  ]
+});
+
+// Check status
+rs.status();
+
+// Check which is primary
+rs.isMaster();
+
+// ==========================================
+// Application Configuration
+// ==========================================
+
+const { MongoClient } = require('mongodb');
+
+const client = new MongoClient('mongodb://mongo1.example.com:27017,mongo2.example.com:27017,mongo3.example.com:27017/mydb?replicaSet=myReplicaSet', {
+  readPreference: 'secondaryPreferred',  // Read from secondaries if available
+  w: 'majority'  // Write to majority before acknowledging
+});
+
+await client.connect();
+const db = client.db('mydb');
+
+// Write (always goes to primary)
+await db.collection('users').insertOne({
+  name: "Foyez",
+  email: "foyez@example.com"
+});
+
+// Read (uses read preference)
+const users = await db.collection('users').find().toArray();
+// Reads from secondary if available
+
+// Force read from primary
+const user = await db.collection('users')
+  .find({ email: "foyez@example.com" })
+  .readPref('primary')
+  .toArray();
+
+// ==========================================
+// Read Preferences
+// ==========================================
+
+// primary: All reads from primary (strong consistency)
+{ readPreference: 'primary' }
+
+// primaryPreferred: Primary if available, else secondary
+{ readPreference: 'primaryPreferred' }
+
+// secondary: Only from secondaries (eventual consistency)
+{ readPreference: 'secondary' }
+
+// secondaryPreferred: Secondary if available, else primary (recommended)
+{ readPreference: 'secondaryPreferred' }
+
+// nearest: Lowest latency node
+{ readPreference: 'nearest' }
+```
+
+---
+
+### Replication Lag
+
+**Problem:** Replicas are slightly behind primary
+
+```
+Timeline:
+00:00:00  Primary: INSERT user (id=1)
+00:00:00  Replica: [not yet replicated]
+00:00:01  User queries replica: User not found!
+00:00:02  Replica: [replication complete]
+00:00:02  User queries replica: User found!
+```
+
+**Solutions:**
+
+```javascript
+// Solution 1: Read from primary after write
+async function createUserConsistent(userData) {
+  // Write to primary
+  await primary.query('INSERT INTO users ...');
+  
+  // Read from primary (ensures consistency)
+  return await primary.query('SELECT * FROM users WHERE ...');
+}
+
+// Solution 2: Wait for replication (MongoDB)
+async function createUserWithWriteConcern(userData) {
+  await db.collection('users').insertOne(
+    userData,
+    { writeConcern: { w: 'majority', wtimeout: 5000 } }
+  );
+  // Waits until majority of replicas have the write
+}
+
+// Solution 3: Use session/cookie to track writes
+async function createUserWithTracking(userData) {
+  const result = await primary.query('INSERT INTO users ... RETURNING id');
+  const userId = result.rows[0].id;
+  
+  // Store in session
+  req.session.justCreatedUser = { id: userId, timestamp: Date.now() };
+  
+  return userId;
+}
+
+async function getUserSmart(userId, req) {
+  // If just created (< 5 seconds ago), read from primary
+  if (req.session.justCreatedUser?.id === userId &&
+      Date.now() - req.session.justCreatedUser.timestamp < 5000) {
+    return await primary.query('SELECT * FROM users WHERE id = $1', [userId]);
+  }
+  
+  // Otherwise, read from replica
+  const replica = getReadReplica();
+  return await replica.query('SELECT * FROM users WHERE id = $1', [userId]);
+}
+```
+
+---
+
+### Benefits & Challenges
+
+**✅ Benefits:**
+- **Distribute read load** across multiple servers
+- **Geographic distribution** (lower latency for users)
+- **High availability** (promote replica if primary fails)
+- **Backup** (replicas can be used for backups)
+- **Analytics** (run expensive queries on replica)
+
+**❌ Challenges:**
+- **Replication lag** (eventual consistency)
+- **Complexity** (application must route queries)
+- **Consistency** (stale reads possible)
+- **Failover** (automatic or manual promotion)
+- **Cost** (multiple servers)
+
+---
+
+## Sharding (Write Scaling)
+
+**Problem:** Single database can't handle millions of writes per second.
+
+**Solution:** Split data across multiple databases (shards)
+
+### Horizontal Sharding
+
+#### By User ID (Hash-Based)
+
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│   Shard 0    │    │   Shard 1    │    │   Shard 2    │
+│ Users 0-333K │    │Users 333K-666K│   │Users 666K-1M │
+├──────────────┤    ├──────────────┤    ├──────────────┤
+│ id: 150000   │    │ id: 450000   │    │ id: 750000   │
+│ name: Alice  │    │ name: Bob    │    │ name: Carol  │
+│ email: ...   │    │ email: ...   │    │ email: ...   │
+└──────────────┘    └──────────────┘    └──────────────┘
+```
+
+**Shard Selection Logic:**
+```javascript
+function getShardForUser(userId) {
+  return userId % 3;  // 3 shards (0, 1, 2)
+}
+
+const shards = [
+  new Pool({ host: 'shard0.db.example.com', ... }),
+  new Pool({ host: 'shard1.db.example.com', ... }),
+  new Pool({ host: 'shard2.db.example.com', ... })
+];
+
+// Write to appropriate shard
+async function createOrder(userId, orderData) {
+  const shardIndex = getShardForUser(userId);
+  const shard = shards[shardIndex];
+  
+  return await shard.query(
+    'INSERT INTO orders (user_id, total) VALUES ($1, $2) RETURNING *',
+    [userId, orderData.total]
+  );
+}
+
+// Read from appropriate shard
+async function getUserOrders(userId) {
+  const shardIndex = getShardForUser(userId);
+  const shard = shards[shardIndex];
+  
+  return await shard.query(
+    'SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC',
+    [userId]
+  );
+}
+```
+
+---
+
+#### Geographic Sharding
+
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│  Asia Shard  │    │   EU Shard   │    │   US Shard   │
+│ (Singapore)  │    │  (Frankfurt) │    │ (Virginia)   │
+├──────────────┤    ├──────────────┤    ├──────────────┤
+│ Users from   │    │ Users from   │    │ Users from   │
+│ Bangladesh,  │    │ Germany,     │    │ USA,         │
+│ India, China │    │ France, UK   │    │ Canada       │
+└──────────────┘    └──────────────┘    └──────────────┘
+```
+
+```javascript
+function getShardByRegion(country) {
+  const regionMap = {
+    'BD': 'asia',
+    'IN': 'asia',
+    'CN': 'asia',
+    'DE': 'eu',
+    'FR': 'eu',
+    'UK': 'eu',
+    'US': 'us',
+    'CA': 'us'
+  };
+  
+  return regionMap[country] || 'us';  // Default to US
+}
+
+const regionShards = {
+  asia: new Pool({ host: 'asia.db.example.com', ... }),
+  eu: new Pool({ host: 'eu.db.example.com', ... }),
+  us: new Pool({ host: 'us.db.example.com', ... })
+};
+
+async function createUser(userData) {
+  const region = getShardByRegion(userData.country);
+  const shard = regionShards[region];
+  
+  return await shard.query('INSERT INTO users ...', [userData]);
+}
+```
+
+---
+
+### MongoDB Sharding
+
+MongoDB has **built-in sharding** that's automatic and transparent.
+
+```
+                    ┌─────────────────┐
+                    │  Query Router   │
+                    │    (mongos)     │
+                    └────────┬────────┘
+                             │
+                  ┌──────────┼──────────┐
+                  │          │          │
+            ┌─────▼────┐ ┌──▼─────┐ ┌──▼─────┐
+            │ Shard 0  │ │Shard 1 │ │Shard 2 │
+            │ Asia     │ │ EU     │ │ US     │
+            │ Replica  │ │Replica │ │Replica │
+            │ Set      │ │Set     │ │Set     │
+            └──────────┘ └────────┘ └────────┘
+```
+
+#### MongoDB Sharding Setup
+
+```javascript
+// ==========================================
+// Enable Sharding
+// ==========================================
+
+// Connect to mongos (query router)
+mongo mongodb://mongos.example.com:27017
+
+// Enable sharding on database
+sh.enableSharding("mydb");
+
+// Shard collection by user_id
+sh.shardCollection("mydb.orders", { user_id: 1 });
+
+// MongoDB automatically distributes data:
+// Shard 0: user_id 0 - 333333
+// Shard 1: user_id 333334 - 666666
+// Shard 2: user_id 666667 - 999999
+
+// ==========================================
+// Application Code (No Changes!)
+// ==========================================
+
+const client = new MongoClient('mongodb://mongos.example.com:27017/mydb');
+await client.connect();
+const db = client.db('mydb');
+
+// MongoDB routes automatically
+await db.collection('orders').insertOne({
+  user_id: 450000,
+  total: 150.00
+});
+// Automatically routed to Shard 1!
+
+await db.collection('orders').find({ user_id: 450000 }).toArray();
+// Automatically routed to Shard 1!
+
+// ==========================================
+// Shard Key Selection
+// ==========================================
+
+// ✅ Good shard keys:
+// - High cardinality (many unique values)
+// - Even distribution
+// - Query pattern aligned (frequently used in queries)
+
+sh.shardCollection("mydb.posts", { author_id: 1 });          // ✅ Good
+sh.shardCollection("mydb.users", { email: "hashed" });       // ✅ Good (hashed)
+sh.shardCollection("mydb.events", { timestamp: 1, user_id: 1 });  // ✅ Good (compound)
+
+// ❌ Bad shard keys:
+sh.shardCollection("mydb.users", { country: 1 });            // ❌ Low cardinality
+sh.shardCollection("mydb.logs", { status: 1 });              // ❌ Few values
+sh.shardCollection("mydb.orders", { created_at: 1 });        // ❌ Monotonic (hotspot)
+```
+
+---
+
+### Benefits:
+- Distribute writes across multiple databases
+- Each shard smaller and faster
+- Geographic locality (lower latency for users)
+- Unlimited scaling potential
+
+### Sharding Challenges
+
+#### Challenge 1: Cross-Shard Queries
+
+```javascript
+// ❌ Can't JOIN across shards
+// Must query each shard and merge in application
+async function getTopUsers() {
+  const results = await Promise.all([
+    shards[0].query('SELECT * FROM users ORDER BY score DESC LIMIT 10'),
+    shards[1].query('SELECT * FROM users ORDER BY score DESC LIMIT 10'),
+    shards[2].query('SELECT * FROM users ORDER BY score DESC LIMIT 10')
+  ]);
+  
+  // Merge and sort in application
+  const allUsers = [...results[0], ...results[1], ...results[2]];
+  return allUsers.sort((a, b) => b.score - a.score).slice(0, 10);
+}
+
+// MongoDB scatter-gather (automatic)
+db.users.find().sort({ score: -1 }).limit(10);
+// Mongos queries all shards and merges results
+```
+
+---
+
+#### Challenge 2: Distributed Transactions
+
+```javascript
+// ❌ Can't have ACID transaction across shards (SQL)
+// Must use saga pattern or 2-phase commit
+
+// MongoDB supports multi-shard transactions (since v4.2)
+const session = client.startSession();
+
+try {
+  await session.startTransaction();
+  
+  // Update in Shard 0
+  await db.collection('users').updateOne(
+    { _id: user1Id },
+    { $inc: { balance: -100 } },
+    { session }
+  );
+  
+  // Update in Shard 1 (different shard)
+  await db.collection('users').updateOne(
+    { _id: user2Id },
+    { $inc: { balance: 100 } },
+    { session }
+  );
+  
+  await session.commitTransaction();
+} catch (error) {
+  await session.abortTransaction();
+} finally {
+  session.endSession();
+}
+```
+
+---
+
+#### Challenge 3: Rebalancing
+
+```javascript
+// Adding new shard changes hash function
+// Old: userId % 3
+// New: userId % 4
+
+// Problem: user_id 6 was in shard 0 (6 % 3 = 0)
+//          user_id 6 now in shard 2 (6 % 4 = 2)
+// Must migrate data!
+
+// Solution: Consistent hashing
+function consistentHash(userId, numShards) {
+  const hash = crypto.createHash('md5')
+    .update(userId.toString())
+    .digest('hex');
+  const hashInt = parseInt(hash.substring(0, 8), 16);
+  return hashInt % numShards;
+}
+
+// Minimizes data movement when adding shards
+
+// MongoDB handles rebalancing automatically
+sh.addShard("mongodb://new-shard:27017");
+// MongoDB migrates data automatically (balancer)
+```
+
+---
+
+#### Challenge 4: Hotspots
+
+```javascript
+// Problem: Celebrity user creates millions of records
+// Their shard becomes overloaded
+
+// Solution 1: Compound shard key
+sh.shardCollection("mydb.posts", { author_id: 1, created_at: 1 });
+// Distributes posts across time ranges
+
+// Solution 2: Hash shard key
+sh.shardCollection("mydb.users", { user_id: "hashed" });
+// Even distribution regardless of user_id pattern
+
+// Solution 3: Further shard hot keys
+if (isCelebrityUser(userId)) {
+  return getCelebrityShard(userId);  // Dedicated shards for celebrities
+}
+```
+
+---
+
+## Connection Pooling
+
+**Problem:** Opening new database connection is expensive (~100ms)
+
+**Solution:** Reuse connections from a pool
+
+### SQL Connection Pooling
+
+```javascript
+const { Pool } = require('pg');
+
+// ❌ Without pooling (slow)
+async function getUserBad(id) {
+  const client = await createNewConnection();  // 100ms!
+  const user = await client.query('SELECT * FROM users WHERE id = $1', [id]);
+  await client.end();
+  return user;
+}
+// Every request: 100ms connection overhead
+
+// ✅ With pooling (fast)
+const pool = new Pool({
+  host: 'localhost',
+  database: 'mydb',
+  user: 'app_user',
+  password: 'password',
+  
+  // Pool configuration
+  max: 20,                    // Maximum connections
+  min: 5,                     // Minimum idle connections
+  idleTimeoutMillis: 30000,   // Close idle connections after 30s
+  connectionTimeoutMillis: 2000  // Wait 2s for connection
+});
+
+async function getUser(id) {
+  const client = await pool.connect();  // < 1ms (reuses existing)
+  
+  try {
+    const result = await client.query('SELECT * FROM users WHERE id = $1', [id]);
+    return result.rows[0];
+  } finally {
+    client.release();  // Return to pool (don't close!)
+  }
+}
+
+// 100x faster! (~1ms vs ~100ms)
+
+// Monitor pool
+pool.on('connect', () => {
+  console.log('New client connected to pool');
+});
+
+pool.on('acquire', () => {
+  console.log('Client acquired from pool');
+});
+
+pool.on('remove', () => {
+  console.log('Client removed from pool');
+});
+
+pool.on('error', (err, client) => {
+  console.error('Unexpected error on idle client', err);
+});
+
+// Check pool stats
+setInterval(() => {
+  console.log({
+    total: pool.totalCount,      // Total connections
+    idle: pool.idleCount,         // Idle connections
+    waiting: pool.waitingCount    // Waiting requests
+  });
+}, 10000);
+
+// Alert if pool exhausted
+if (pool.waitingCount > 0) {
+  console.warn('Connection pool exhausted! Increase max or optimize queries.');
+}
+```
+
+---
+
+### MongoDB Connection Pooling
+
+```javascript
+const { MongoClient } = require('mongodb');
+
+const client = new MongoClient('mongodb://localhost:27017', {
+  maxPoolSize: 50,        // Maximum connections
+  minPoolSize: 10,        // Minimum connections
+  maxIdleTimeMS: 30000,   // Close idle after 30s
+  waitQueueTimeoutMS: 5000  // Wait 5s for connection
+});
+
+await client.connect();
+const db = client.db('mydb');
+
+// Connection automatically managed
+const users = await db.collection('users').find().toArray();
+// Uses connection from pool
+
+// Monitor connection pool
+client.on('connectionPoolCreated', (event) => {
+  console.log('Pool created', event);
+});
+
+client.on('connectionCreated', (event) => {
+  console.log('Connection created', event.connectionId);
+});
+
+client.on('connectionReady', (event) => {
+  console.log('Connection ready', event.connectionId);
+});
+
+client.on('connectionClosed', (event) => {
+  console.log('Connection closed', event.connectionId);
+});
+
+client.on('connectionCheckOutStarted', (event) => {
+  console.log('Connection checkout started');
+});
+
+client.on('connectionCheckOutFailed', (event) => {
+  console.error('Connection checkout failed', event.reason);
+});
+```
+
+---
+
+### Redis Connection Pooling
+
+```javascript
+const Redis = require('ioredis');
+
+// Create pool-like behavior with cluster
+const cluster = new Redis.Cluster([
+  { host: 'redis1.example.com', port: 6379 },
+  { host: 'redis2.example.com', port: 6379 },
+  { host: 'redis3.example.com', port: 6379 }
+], {
+  redisOptions: {
+    maxRetriesPerRequest: 3,
+    connectTimeout: 10000
+  }
+});
+
+// Or use single connection with reconnection
+const redis = new Redis({
+  host: 'localhost',
+  port: 6379,
+  retryStrategy: (times) => {
+    const delay = Math.min(times * 50, 2000);
+    return delay;
+  },
+  maxRetriesPerRequest: 3
+});
+
+// Connection maintained automatically
+await redis.set('key', 'value');
+await redis.get('key');
+```
+
+---
+
+## Advanced Performance Concepts
+
+### 1. Query Result Streaming
+
+```javascript
+// ❌ BAD: Load all results into memory
+const users = await pool.query('SELECT * FROM users');
+// If 1M users, loads all into memory (~1GB)
+
+// ✅ GOOD: Stream results
+const { Readable } = require('stream');
+
+async function* streamUsers() {
+  const client = await pool.connect();
+  
+  try {
+    const cursor = client.query(
+      new Cursor('SELECT * FROM users')
+    );
+    
+    let rows;
+    while ((rows = await cursor.read(100))) {
+      for (const row of rows) {
+        yield row;
+      }
+    }
+  } finally {
+    client.release();
+  }
+}
+
+// Process in chunks
+for await (const user of streamUsers()) {
+  await processUser(user);
+}
+```
+
+---
+
+### 2. Prepared Statements
+
+```javascript
+// ✅ Prepared statements (faster, safer)
+const preparedQuery = {
+  name: 'get-user',
+  text: 'SELECT * FROM users WHERE id = $1',
+  // Query plan cached by database
+};
+
+// First execution: Parse + plan + execute
+await pool.query(preparedQuery, [1]);
+
+// Subsequent executions: Use cached plan (faster!)
+await pool.query(preparedQuery, [2]);
+await pool.query(preparedQuery, [3]);
+
+// MongoDB: Queries are automatically cached
+```
+
+---
+
+### 3. Bulk Operations
+
+```javascript
+// SQL: Batch inserts
+const users = [...];  // 1000 users
+
+// ❌ BAD: 1000 queries
+for (const user of users) {
+  await pool.query('INSERT INTO users (name, email) VALUES ($1, $2)', [user.name, user.email]);
+}
+// 1000 round trips
+
+// ✅ GOOD: Single batch query
+const values = users.map(u => `('${u.name}', '${u.email}')`).join(',');
+await pool.query(`INSERT INTO users (name, email) VALUES ${values}`);
+// 1 round trip
+
+// ✅ BEST: Use COPY for huge datasets
+const copyStream = client.query(copyFrom('COPY users (name, email) FROM STDIN CSV'));
+copyStream.write('Alice,alice@example.com\n');
+copyStream.write('Bob,bob@example.com\n');
+copyStream.end();
+// 100x faster for millions of rows
+
+// MongoDB: Bulk operations
+await db.collection('users').insertMany(users, { ordered: false });
+// Parallel inserts
+```
+
+---
+
+### 4. Pagination Optimization
+
+```sql
+-- ❌ SLOW: Large OFFSET
+SELECT * FROM posts 
+ORDER BY created_at DESC 
+LIMIT 20 OFFSET 10000;
+-- Database still scans 10,020 rows
+
+-- ✅ FAST: Keyset pagination
+SELECT * FROM posts 
+WHERE created_at < '2024-01-15 10:30:00'
+ORDER BY created_at DESC 
+LIMIT 20;
+-- Uses index efficiently
+
+-- Implementation
+function paginatePosts(lastSeenDate = null, limit = 20) {
+  if (lastSeenDate) {
+    return pool.query(
+      'SELECT * FROM posts WHERE created_at < $1 ORDER BY created_at DESC LIMIT $2',
+      [lastSeenDate, limit]
+    );
+  } else {
+    return pool.query(
+      'SELECT * FROM posts ORDER BY created_at DESC LIMIT $1',
+      [limit]
+    );
+  }
+}
+```
+
+---
+
+### 5. Database Partitioning
+
+```sql
+-- Split large tables by date range
+CREATE TABLE orders (
+  id BIGSERIAL,
+  user_id INTEGER,
+  total DECIMAL(10, 2),
+  created_at TIMESTAMP
+) PARTITION BY RANGE (created_at);
+
+-- Create monthly partitions
+CREATE TABLE orders_2024_01 PARTITION OF orders
+  FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
+
+CREATE TABLE orders_2024_02 PARTITION OF orders
+  FOR VALUES FROM ('2024-02-01') TO ('2024-03-01');
+
+-- Queries automatically use correct partition
+SELECT * FROM orders WHERE created_at >= '2024-01-15';
+-- Only scans orders_2024_01 (faster!)
+
+-- Benefits:
+-- 1. Smaller indexes (per partition)
+-- 2. Faster queries (scan only relevant partitions)
+-- 3. Easy to drop old data (DROP TABLE orders_2023_12)
+-- 4. Parallel query execution
+```
+
+---
+
+## Advanced Database Concepts
+
+### 1. Transactions & Isolation Levels
+
+```sql
+-- Set isolation level
+BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+  SELECT * FROM accounts WHERE id = 1 FOR UPDATE;  -- Lock row
+  UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+  UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+
+COMMIT;
+
+-- Isolation levels (strictest to loosest)
+-- SERIALIZABLE: Safest, slowest
+-- REPEATABLE READ: Good balance
+-- READ COMMITTED: Default (PostgreSQL)
+-- READ UNCOMMITTED: Fastest, least safe
+```
+
+---
+
+### 2. Database Locks
+
+```sql
+-- Row-level lock (locks specific rows)
+SELECT * FROM products WHERE id = 1 FOR UPDATE;
+
+-- Table-level lock (locks entire table)
+LOCK TABLE products IN EXCLUSIVE MODE;
+
+-- Advisory lock (application-level coordination)
+SELECT pg_advisory_lock(123);
+-- Critical section
+SELECT pg_advisory_unlock(123);
+```
+
+---
+
+### 3. Full-Text Search
+
+```sql
+-- Add tsvector column
+ALTER TABLE products ADD COLUMN search_vector tsvector;
+
+-- Create GIN index
+CREATE INDEX idx_products_search ON products USING GIN(search_vector);
+
+-- Update search vector
+UPDATE products 
+SET search_vector = to_tsvector('english', name || ' ' || description);
+
+-- Search query
+SELECT * FROM products
+WHERE search_vector @@ to_tsquery('english', 'gaming & laptop')
+ORDER BY ts_rank(search_vector, to_tsquery('english', 'gaming & laptop')) DESC;
+
+-- With highlighting
+SELECT 
+  name,
+  ts_headline('english', description, to_tsquery('english', 'gaming & laptop')) as highlighted
+FROM products
+WHERE search_vector @@ to_tsquery('english', 'gaming & laptop');
+```
+
+---
+
+### 4. Partitioning (Split Large Tables)
+
+```sql
+-- Partition by range (date)
+CREATE TABLE orders (
+  id BIGSERIAL,
+  user_id INTEGER,
+  total DECIMAL(10, 2),
+  created_at TIMESTAMP
+) PARTITION BY RANGE (created_at);
+
+-- Create monthly partitions
+CREATE TABLE orders_2024_01 PARTITION OF orders
+  FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
+
+CREATE TABLE orders_2024_02 PARTITION OF orders
+  FOR VALUES FROM ('2024-02-01') TO ('2024-03-01');
+
+CREATE TABLE orders_2024_03 PARTITION OF orders
+  FOR VALUES FROM ('2024-03-01') TO ('2024-04-01');
+
+-- Queries automatically use correct partition
+SELECT * FROM orders WHERE created_at >= '2024-01-15';
+-- Only scans orders_2024_01 (faster!)
+
+-- Benefits:
+-- 1. Smaller indexes (per partition)
+-- 2. Faster queries (scan only relevant partitions)
+-- 3. Easy to drop old data (DROP TABLE orders_2023_01)
+```
+
+---
+
+### 5. Database Triggers
+
+```sql
+-- Auto-update timestamp
+CREATE OR REPLACE FUNCTION update_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = CURRENT_TIMESTAMP;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_users_timestamp
+  BEFORE UPDATE ON users
+  FOR EACH ROW
+  EXECUTE FUNCTION update_timestamp();
+
+-- Audit trail
+CREATE TABLE audit_log (
+  id SERIAL PRIMARY KEY,
+  table_name VARCHAR(50),
+  action VARCHAR(10),
+  old_data JSONB,
+  new_data JSONB,
+  changed_by VARCHAR(100),
+  changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE OR REPLACE FUNCTION audit_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO audit_log (table_name, action, new_data, changed_by)
+    VALUES (TG_TABLE_NAME, 'INSERT', row_to_json(NEW), current_user);
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    INSERT INTO audit_log (table_name, action, old_data, new_data, changed_by)
+    VALUES (TG_TABLE_NAME, 'UPDATE', row_to_json(OLD), row_to_json(NEW), current_user);
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO audit_log (table_name, action, old_data, changed_by)
+    VALUES (TG_TABLE_NAME, 'DELETE', row_to_json(OLD), current_user);
+    RETURN OLD;
+  END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER audit_users
+  AFTER INSERT OR UPDATE OR DELETE ON users
+  FOR EACH ROW
+  EXECUTE FUNCTION audit_changes();
+```
+
+---
