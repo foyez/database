@@ -1457,7 +1457,7 @@ Let's build a production-ready e-commerce database from scratch using PostgreSQL
 ┌──────────────┐                  ┌──────────────────┐             ┌──────────────────┐
 │    USERS     │                  │     ORDERS       │             │  ORDER_ITEMS     │
 ├──────────────┤        1:N       ├──────────────────┤    1:N      │  (Junction)      │
-│ id (PK)      │──────────────--► │ id (PK)          │-----------► ├──────────────────┤
+│ id (PK)      │────────────────► │ id (PK)          │───────────► ├──────────────────┤
 │ name         │                  │ user_id (FK)     │             │ id (PK)          │
 │ email        │                  │ total            │             │ order_id (FK)    │
 │ password_hash│                  | status           |             │ product_id (FK)  │
@@ -1467,13 +1467,13 @@ Let's build a production-ready e-commerce database from scratch using PostgreSQL
         |                         └──────────────────┘                     ▲
         |                                                                  |
         | 1:N                                                1:N           |
-        |                                ┌---------------------------------┘
+        |                                ┌─────────────────────────────────┘
         ▼                                |
 ┌─────────────────┐             ┌──────────────────┐                ┌──────────────────┐
 │   CART_ITEMS    │             │    PRODUCTS      │                │     REVIEWS      │
 ├─────────────────┤             ├──────────────────┤                ├──────────────────┤
 │ id (PK)         │       N:1   │ id (PK)          │     1:N        │ id (PK)          │
-│ user_id (FK)    | ◄─────────--│ name             │─────────-----► │ product_id (FK)  │
+│ user_id (FK)    | ◄───────────│ name             │──────────────► │ product_id (FK)  │
 │ product_id (FK) |             │ description      │                │ user_id (FK)     │
 │ quantity        │             │ price            │                │ rating           │
 │ created_at      │             │ stock            │                │ comment          │
