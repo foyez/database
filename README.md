@@ -7116,3 +7116,1218 @@ CREATE TRIGGER audit_users
 ```
 
 ---
+
+## Database Security
+
+### 1. Principle of Least Privilege
+
+**Rule:** Give each user/application only the permissions they need.
+
+#### SQL (PostgreSQL)
+
+```sql
+-- ❌ BAD: Give admin access to application
+GRANT ALL PRIVILEGES ON DATABASE mydb TO app_user;
+-- Application can DROP tables, CREATE users, DELETE everything!
+
+-- ✅ GOOD: Only necessary permissions
+CREATE USER app_user WITH PASSWORD 'secure_password';
+
+-- Read-only access to most tables
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_user;
+
+-- Write access only to specific tables
+GRANT INSERT, UPDATE, DELETE ON orders, order_items, cart_items TO app_user;
+
+-- No access to sensitive tables
+REVOKE ALL ON users_sensitive_data, admin_logs FROM app_user;
+
+-- No schema changes
+REVOKE CREATE ON SCHEMA public FROM app_user;
+```
+
+**Role-Based Access Control (RBAC)**
+
+```sql
+-- Create roles for different access levels
+CREATE ROLE readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly;
+
+CREATE ROLE app_writer;
+GRANT SELECT, INSERT, UPDATE, DELETE ON orders, products TO app_writer;
+
+CREATE ROLE admin;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO admin;
+
+-- Assign roles to users
+CREATE USER app_user1 WITH PASSWORD '...';
+GRANT app_writer TO app_user1;
+
+CREATE USER reporting_user WITH PASSWORD '...';
+GRANT readonly TO reporting_user;
+```
+
+#### MongoDB
+
+```javascript
+// Create users with specific roles
+db.createUser({
+  user: "app_user",
+  pwd: "secure_password",
+  roles: [
+    { role: "readWrite", db: "mydb" },  // Read/write access
+    { role: "read", db: "analytics" }   // Read-only on analytics
+  ]
+});
+
+// Read-only user
+db.createUser({
+  user: "readonly_user",
+  pwd: "password",
+  roles: [{ role: "read", db: "mydb" }]
+});
+
+// Custom role
+db.createRole({
+  role: "orderManager",
+  privileges: [
+    {
+      resource: { db: "mydb", collection: "orders" },
+      actions: ["find", "insert", "update"]
+    },
+    {
+      resource: { db: "mydb", collection: "products" },
+      actions: ["find"]  // Read-only on products
+    }
+  ],
+  roles: []
+});
+
+// Grant custom role
+db.grantRolesToUser("app_user", ["orderManager"]);
+```
+
+---
+
+### 2. SQL Injection Prevention
+
+**SQL Injection:** Attacker manipulates SQL queries through user input.
+
+```javascript
+// ❌ DANGEROUS: SQL Injection vulnerable
+async function getUserBad(userId) {
+  const query = `SELECT * FROM users WHERE id = ${userId}`;
+  return await db.query(query);
+}
+
+// Attack 1:
+// Input: "1 OR 1=1 --"
+// Query becomes: SELECT * FROM users WHERE id = 1 OR 1=1 --
+// Returns ALL users!
+
+// Attack 2:
+// Input: "1; DROP TABLE users; --"
+// Query becomes: SELECT * FROM users WHERE id = 1; DROP TABLE users; --
+// DELETES ENTIRE TABLE!
+
+// Attack 3:
+// Input: "1 UNION SELECT username, password, NULL FROM admin_users--"
+// Exposes admin passwords!
+
+// ✅ SAFE: Parameterized queries (PostgreSQL)
+async function getUserSafe(userId) {
+  return await db.query(
+    'SELECT * FROM users WHERE id = $1',
+    [userId]  // Parameters are escaped automatically
+  );
+}
+
+// ✅ SAFE: Prepared statements (MySQL)
+const sql = mysql.format('SELECT * FROM users WHERE id = ?', [userId]);
+
+// ✅ SAFE: Use ORM (Prisma)
+const user = await prisma.user.findUnique({
+  where: { id: userId }
+});
+
+// ✅ SAFE: Input validation
+function validateUserId(userId) {
+  const id = parseInt(userId, 10);
+  if (isNaN(id) || id < 1 || id > Number.MAX_SAFE_INTEGER) {
+    throw new Error('Invalid user ID');
+  }
+  return id;
+}
+
+const safeUserId = validateUserId(req.params.id);
+```
+
+**NoSQL Injection (MongoDB):**
+
+```javascript
+// ❌ VULNERABLE: NoSQL injection
+async function loginBad(username, password) {
+  return await db.collection('users').findOne({
+    username: username,
+    password: password
+  });
+}
+
+// Attack:
+// Input: username = "admin", password = { $ne: "" }
+// Query becomes: { username: "admin", password: { $ne: "" } }
+// Matches admin with ANY password!
+
+// ✅ SAFE: Validate input types
+async function loginSafe(username, password) {
+  if (typeof username !== 'string' || typeof password !== 'string') {
+    throw new Error('Invalid input types');
+  }
+  
+  return await db.collection('users').findOne({
+    username: username,
+    password: hashPassword(password)  // Never store plain passwords!
+  });
+}
+
+// ✅ SAFE: Sanitize input
+const sanitize = require('mongo-sanitize');
+
+async function loginSanitized(username, password) {
+  return await db.collection('users').findOne({
+    username: sanitize(username),
+    password: hashPassword(sanitize(password))
+  });
+}
+```
+
+---
+
+### 3. Password Security
+
+```javascript
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+
+// ❌ NEVER store plain passwords
+async function registerUserBad(email, password) {
+  await db.query(
+    'INSERT INTO users (email, password) VALUES ($1, $2)',
+    [email, password]  // DANGER! Plain text!
+  );
+}
+
+// ✅ Always hash passwords with salt
+async function registerUser(email, password) {
+  const saltRounds = 12;  // Cost factor (higher = more secure, slower)
+  const hashedPassword = await bcrypt.hash(password, saltRounds);
+  
+  await db.query(
+    'INSERT INTO users (email, password_hash) VALUES ($1, $2)',
+    [email, hashedPassword]
+  );
+}
+
+// Verify password
+async function loginUser(email, password) {
+  const user = await db.query(
+    'SELECT id, password_hash FROM users WHERE email = $1',
+    [email]
+  );
+  
+  if (!user || !user.rows[0]) {
+    return null;
+  }
+  
+  const isValid = await bcrypt.compare(password, user.rows[0].password_hash);
+  return isValid ? user.rows[0] : null;
+}
+
+// Generate secure random tokens
+function generateToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// Generate secure session ID
+function generateSessionId() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+// Password strength validation
+function validatePasswordStrength(password) {
+  if (password.length < 8) {
+    throw new Error('Password must be at least 8 characters');
+  }
+  
+  if (!/[A-Z]/.test(password)) {
+    throw new Error('Password must contain uppercase letter');
+  }
+  
+  if (!/[a-z]/.test(password)) {
+    throw new Error('Password must contain lowercase letter');
+  }
+  
+  if (!/[0-9]/.test(password)) {
+    throw new Error('Password must contain number');
+  }
+  
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    throw new Error('Password must contain special character');
+  }
+  
+  return true;
+}
+```
+
+---
+
+### 4. Encryption
+
+#### Encryption at Rest (SQL)
+
+```sql
+-- PostgreSQL: Encrypt sensitive columns
+CREATE EXTENSION pgcrypto;
+
+-- Encrypt data before storing
+INSERT INTO users (ssn, credit_card) 
+VALUES (
+  pgp_sym_encrypt('123-45-6789', 'encryption_key'),
+  pgp_sym_encrypt('4111-1111-1111-1111', 'encryption_key')
+);
+
+-- Decrypt when reading
+SELECT 
+  id,
+  name,
+  pgp_sym_decrypt(ssn::bytea, 'encryption_key') as ssn,
+  pgp_sym_decrypt(credit_card::bytea, 'encryption_key') as credit_card
+FROM users
+WHERE id = 1;
+
+-- Use environment variable for key (don't hardcode!)
+SELECT pgp_sym_encrypt(sensitive_data, current_setting('app.encryption_key'));
+```
+
+#### Encryption in Transit
+
+```javascript
+// PostgreSQL: SSL/TLS connection
+const { Pool } = require('pg');
+
+const pool = new Pool({
+  host: 'database.example.com',
+  port: 5432,
+  database: 'mydb',
+  user: 'app_user',
+  password: 'password',
+  
+  ssl: {
+    rejectUnauthorized: true,  // Verify server certificate
+    ca: fs.readFileSync('/path/to/ca-cert.pem').toString(),
+    key: fs.readFileSync('/path/to/client-key.pem').toString(),
+    cert: fs.readFileSync('/path/to/client-cert.pem').toString()
+  }
+});
+
+// MongoDB: TLS connection
+const { MongoClient } = require('mongodb');
+
+const client = new MongoClient('mongodb://localhost:27017', {
+  tls: true,
+  tlsCAFile: '/path/to/ca.pem',
+  tlsCertificateKeyFile: '/path/to/client.pem'
+});
+```
+
+#### MongoDB Field-Level Encryption
+
+```javascript
+// Client-Side Field Level Encryption (CSFLE)
+const { ClientEncryption } = require('mongodb-client-encryption');
+
+const encryption = new ClientEncryption(client, {
+  keyVaultNamespace: 'encryption.__keyVault',
+  kmsProviders: {
+    local: {
+      key: Buffer.from(masterKey, 'base64')
+    }
+  }
+});
+
+// Encrypt before insert
+const encryptedSSN = await encryption.encrypt('123-45-6789', {
+  algorithm: 'AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic',
+  keyId: dataKeyId
+});
+
+await db.collection('users').insertOne({
+  name: "Foyez",
+  ssn: encryptedSSN  // Encrypted value
+});
+
+// Decrypt after query
+const user = await db.collection('users').findOne({ name: "Foyez" });
+const decryptedSSN = await encryption.decrypt(user.ssn);
+```
+
+---
+
+### 5. Environment Variables & Secrets Management
+
+```javascript
+// ❌ NEVER hardcode credentials
+const pool = new Pool({
+  host: 'localhost',
+  user: 'postgres',
+  password: 'supersecret123'  // DANGER!
+});
+
+// ✅ Use environment variables
+require('dotenv').config();
+
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT || '5432'),
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  ssl: process.env.DB_SSL === 'true'
+});
+
+// .env file (NEVER commit to git!)
+DB_HOST=database.example.com
+DB_PORT=5432
+DB_NAME=production_db
+DB_USER=app_user
+DB_PASSWORD=super_secure_password_here_with_special_chars!@#$
+DB_SSL=true
+
+// .gitignore
+.env
+.env.local
+.env.production
+.env.*.local
+
+// ✅ BETTER: Use secrets manager (AWS Secrets Manager, Azure Key Vault)
+const AWS = require('aws-sdk');
+const secretsManager = new AWS.SecretsManager({ region: 'us-east-1' });
+
+async function getDbCredentials() {
+  const secret = await secretsManager.getSecretValue({
+    SecretId: 'prod/database/credentials'
+  }).promise();
+  
+  return JSON.parse(secret.SecretString);
+}
+
+const dbCreds = await getDbCredentials();
+const pool = new Pool(dbCreds);
+```
+
+---
+
+### 6. Row-Level Security (PostgreSQL)
+
+```sql
+-- Enable row-level security
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Users can only see their own data
+CREATE POLICY user_isolation ON users
+  FOR ALL
+  USING (id = current_setting('app.current_user')::INTEGER);
+
+-- Set current user in application
+SET app.current_user = '123';
+
+-- This query only returns user 123's data
+SELECT * FROM users;
+-- Automatically filtered: WHERE id = 123
+
+-- Multi-tenant example
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON orders
+  FOR ALL
+  USING (tenant_id = current_setting('app.current_tenant')::INTEGER);
+
+-- Application sets tenant
+SET app.current_tenant = '456';
+
+-- Queries automatically filtered by tenant
+SELECT * FROM orders;  -- Only tenant 456's orders
+```
+
+---
+
+## Monitoring & Observability
+
+### Key Metrics to Monitor
+
+#### 1. Query Performance (SQL)
+
+```sql
+-- PostgreSQL: Enable pg_stat_statements
+CREATE EXTENSION pg_stat_statements;
+
+-- View slow queries
+SELECT 
+  query,
+  calls,
+  total_exec_time,
+  mean_exec_time,
+  max_exec_time,
+  stddev_exec_time,
+  rows
+FROM pg_stat_statements
+WHERE mean_exec_time > 100  -- Slower than 100ms
+ORDER BY mean_exec_time DESC
+LIMIT 20;
+
+-- Find queries causing most load
+SELECT 
+  query,
+  calls,
+  total_exec_time,
+  (total_exec_time / sum(total_exec_time) OVER ()) * 100 AS percent_time
+FROM pg_stat_statements
+ORDER BY total_exec_time DESC
+LIMIT 10;
+
+-- Reset statistics
+SELECT pg_stat_statements_reset();
+```
+
+#### 2. Query Performance (MongoDB)
+
+```javascript
+// Enable profiling
+db.setProfilingLevel(2);  // Profile all operations
+// 0 = off, 1 = slow ops only, 2 = all ops
+
+// View slow queries
+db.system.profile.find({
+  millis: { $gt: 100 }  // Slower than 100ms
+}).sort({ ts: -1 }).limit(10);
+
+// Profiling with threshold
+db.setProfilingLevel(1, { slowms: 100 });  // Only ops > 100ms
+
+// Check current profiling level
+db.getProfilingStatus();
+
+// View profiling data
+db.system.profile.find().sort({ ts: -1 }).pretty();
+
+// Disable profiling
+db.setProfilingLevel(0);
+```
+
+---
+
+#### 3. Connection Pool Metrics
+
+```javascript
+// PostgreSQL
+setInterval(() => {
+  console.log({
+    total: pool.totalCount,
+    idle: pool.idleCount,
+    waiting: pool.waitingCount,
+    utilization: ((pool.totalCount - pool.idleCount) / pool.totalCount * 100).toFixed(2) + '%'
+  });
+  
+  // Alert if utilization > 80%
+  if ((pool.totalCount - pool.idleCount) / pool.totalCount > 0.8) {
+    console.warn('⚠️  Connection pool utilization > 80%!');
+  }
+  
+  // Alert if requests waiting
+  if (pool.waitingCount > 0) {
+    console.error('🚨 Connection pool exhausted! ' + pool.waitingCount + ' requests waiting');
+  }
+}, 10000);
+
+// MongoDB: Monitor connection pool
+client.on('connectionPoolCreated', (event) => {
+  console.log('✅ Connection pool created:', event.options.maxPoolSize);
+});
+
+client.on('connectionCheckOutStarted', (event) => {
+  console.log('🔄 Connection checkout started');
+});
+
+client.on('connectionCheckOutFailed', (event) => {
+  console.error('❌ Connection checkout failed:', event.reason);
+});
+```
+
+---
+
+#### 4. Cache Hit Ratio
+
+```sql
+-- PostgreSQL: Should be > 99%
+SELECT 
+  sum(heap_blks_read) as heap_read,
+  sum(heap_blks_hit) as heap_hit,
+  (sum(heap_blks_hit) / (sum(heap_blks_hit) + sum(heap_blks_read))) as cache_hit_ratio
+FROM pg_statio_user_tables;
+
+-- If < 0.99, increase shared_buffers
+ALTER SYSTEM SET shared_buffers = '4GB';  -- 25% of RAM
+-- Restart required
+```
+
+```javascript
+// Redis: Monitor hit rate
+let hits = 0, misses = 0;
+
+setInterval(async () => {
+  const info = await redis.info('stats');
+  const stats = info.split('\n').reduce((acc, line) => {
+    const [key, value] = line.split(':');
+    if (key && value) acc[key.trim()] = value.trim();
+    return acc;
+  }, {});
+  
+  const hitRate = parseInt(stats.keyspace_hits) / 
+    (parseInt(stats.keyspace_hits) + parseInt(stats.keyspace_misses));
+  
+  console.log(`Cache hit rate: ${(hitRate * 100).toFixed(2)}%`);
+  // Aim for > 90%
+}, 60000);
+```
+
+---
+
+#### 5. Replication Lag
+
+```sql
+-- PostgreSQL: Check replication lag (on primary)
+SELECT 
+  client_addr,
+  state,
+  sync_state,
+  replay_lag,
+  write_lag,
+  flush_lag
+FROM pg_stat_replication;
+
+-- Alert if lag > 10 seconds
+```
+
+```javascript
+// MongoDB: Check replication lag
+rs.printReplicationInfo();
+rs.printSlaveReplicationInfo();
+
+// Programmatically
+db.adminCommand({ replSetGetStatus: 1 });
+```
+
+---
+
+#### 6. Disk Usage
+
+```sql
+-- Database size
+SELECT 
+  pg_database.datname,
+  pg_size_pretty(pg_database_size(pg_database.datname)) AS size
+FROM pg_database
+ORDER BY pg_database_size(pg_database.datname) DESC;
+
+-- Table sizes
+SELECT 
+  schemaname,
+  tablename,
+  pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size,
+  pg_size_pretty(pg_relation_size(schemaname||'.'||tablename)) AS table_size,
+  pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename) - pg_relation_size(schemaname||'.'||tablename)) AS index_size
+FROM pg_tables
+ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC
+LIMIT 20;
+```
+
+---
+
+### Monitoring Tools
+
+#### 1. Prometheus + Grafana
+
+```yaml
+# docker-compose.yml
+version: '3'
+services:
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://monitoring_user:password@postgres:5432/mydb?sslmode=disable"
+    ports:
+      - "9187:9187"
+  
+  mongodb_exporter:
+    image: percona/mongodb_exporter
+    command:
+      - '--mongodb.uri=mongodb://mongodb:27017'
+    ports:
+      - "9216:9216"
+  
+  redis_exporter:
+    image: oliver006/redis_exporter
+    environment:
+      REDIS_ADDR: "redis:6379"
+    ports:
+      - "9121:9121"
+  
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+  
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+```
+
+#### 2. Application Performance Monitoring
+
+```javascript
+// Example: Custom metrics collection
+const metrics = {
+  queryCount: 0,
+  queryTime: 0,
+  errors: 0
+};
+
+async function monitoredQuery(query, params) {
+  const start = Date.now();
+  metrics.queryCount++;
+  
+  try {
+    const result = await pool.query(query, params);
+    metrics.queryTime += Date.now() - start;
+    return result;
+  } catch (error) {
+    metrics.errors++;
+    throw error;
+  }
+}
+
+// Expose metrics endpoint
+app.get('/metrics', (req, res) => {
+  res.json({
+    queries: {
+      total: metrics.queryCount,
+      avgTime: metrics.queryTime / metrics.queryCount,
+      errors: metrics.errors,
+      errorRate: (metrics.errors / metrics.queryCount * 100).toFixed(2) + '%'
+    },
+    pool: {
+      total: pool.totalCount,
+      idle: pool.idleCount,
+      waiting: pool.waitingCount
+    }
+  });
+});
+```
+
+#### 3. pgBadger (PostgreSQL Log Analyzer)
+
+```bash
+# Enable logging in postgresql.conf
+log_min_duration_statement = 100  # Log queries > 100ms
+log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
+log_checkpoints = on
+log_connections = on
+log_disconnections = on
+log_lock_waits = on
+
+# Generate report
+pgbadger /var/log/postgresql/postgresql-*.log -o report.html
+
+# Open report.html in browser
+```
+
+---
+
+---
+
+## Backup & Recovery
+
+### SQL Backup Strategies
+
+#### 1. Logical Backups (SQL Dump)
+
+**PostgreSQL (pg_dump):**
+
+```bash
+# Full database backup
+pg_dump -U postgres -d mydb -F c -f /backups/mydb_$(date +%Y%m%d).dump
+
+# Options:
+# -F c: Custom format (compressed, allows partial restore)
+# -F p: Plain SQL format (readable, can edit)
+# -F t: Tar format
+
+# Backup specific tables
+pg_dump -U postgres -d mydb -t users -t orders -f tables_backup.sql
+
+# Backup schema only (no data)
+pg_dump -U postgres -d mydb --schema-only -f schema.sql
+
+# Backup data only (no schema)
+pg_dump -U postgres -d mydb --data-only -f data.sql
+
+# Backup with inserts (compatible with any database)
+pg_dump -U postgres -d mydb --inserts -f mydb_inserts.sql
+
+# Restore
+pg_restore -U postgres -d mydb /backups/mydb_20241229.dump
+
+# Restore specific table
+pg_restore -U postgres -d mydb -t users /backups/mydb_20241229.dump
+
+# Restore to different database
+createdb mydb_restored
+pg_restore -U postgres -d mydb_restored /backups/mydb_20241229.dump
+```
+
+**MySQL:**
+
+```bash
+# Full database backup
+mysqldump -u root -p mydb > /backups/mydb_$(date +%Y%m%d).sql
+
+# All databases
+mysqldump -u root -p --all-databases > /backups/all_dbs_$(date +%Y%m%d).sql
+
+# Specific tables
+mysqldump -u root -p mydb users orders > /backups/tables.sql
+
+# Restore
+mysql -u root -p mydb < /backups/mydb_20241229.sql
+```
+
+---
+
+#### 2. Physical Backups
+
+```bash
+# PostgreSQL: Binary copy of entire cluster
+pg_basebackup -D /backups/basebackup \
+  -F tar \
+  -z \
+  -P \
+  -U replication_user \
+  -h primary.db.example.com
+
+# Options:
+# -D: Destination directory
+# -F tar: Tar format
+# -z: Compress
+# -P: Show progress
+
+# MySQL: Physical backup
+mysqlbackup --backup-dir=/backups/physical --backup-image=backup.mbi --compress backup-to-image
+
+# Restore
+mysqlbackup --backup-dir=/backups/physical --backup-image=backup.mbi copy-back-and-apply-log
+```
+
+---
+
+#### 3. Continuous Archiving (WAL)
+
+```bash
+# postgresql.conf
+wal_level = replica
+archive_mode = on
+archive_command = 'cp %p /archive/%f'  # Or use s3 sync
+
+# Point-in-time recovery (PITR)
+# Restore to specific timestamp
+pg_restore --target-time='2024-12-29 10:30:00' /backups/basebackup
+```
+
+---
+
+### MongoDB Backup Strategies
+
+```bash
+# 1. mongodump (logical backup)
+mongodump --uri="mongodb://localhost:27017/mydb" \
+  --out=/backups/mongodb_$(date +%Y%m%d)
+
+# Backup specific collections
+mongodump --db=mydb --collection=users --out=/backups/
+
+# Compressed backup
+mongodump --archive=/backups/mydb.archive --gzip
+
+# Restore
+mongorestore --uri="mongodb://localhost:27017/mydb" \
+  /backups/mongodb_20241229/
+
+# Restore from archive
+mongorestore --archive=/backups/mydb.archive --gzip
+
+# 2. File system snapshot (physical backup)
+# Requires replica set or sharded cluster
+# Use MongoDB Cloud Backup or filesystem snapshots
+
+# 3. Continuous backup (MongoDB Atlas)
+# Automatic continuous backups with point-in-time restore
+```
+
+---
+
+### Backup Best Practices
+
+```bash
+# 1. Automate backups (cron job)
+# /etc/cron.d/postgres-backup
+0 2 * * * postgres pg_dump -U postgres -d mydb -F c -f /backups/mydb_$(date +\%Y\%m\%d).dump
+
+# 2. Test restores regularly (monthly)
+createdb test_restore
+pg_restore -U postgres -d test_restore /backups/mydb_latest.dump
+# Verify data integrity
+psql -U postgres -d test_restore -c "SELECT COUNT(*) FROM users;"
+dropdb test_restore
+
+# 3. Store backups off-site (S3, Google Cloud Storage)
+aws s3 sync /backups/ s3://my-db-backups/ --delete
+
+# 4. Encrypt backups
+pg_dump -U postgres -d mydb | \
+  gpg --encrypt --recipient admin@example.com > \
+  /backups/mydb_encrypted.dump.gpg
+
+# Decrypt
+gpg --decrypt /backups/mydb_encrypted.dump.gpg | \
+  pg_restore -U postgres -d mydb
+
+# 5. Retention policy
+# Keep: Daily for 7 days, Weekly for 4 weeks, Monthly for 12 months
+find /backups -name "*.dump" -mtime +7 -delete  # Delete > 7 days
+
+# 6. Monitor backup success
+#!/bin/bash
+BACKUP_FILE="/backups/mydb_$(date +%Y%m%d).dump"
+pg_dump -U postgres -d mydb -F c -f $BACKUP_FILE
+
+if [ $? -eq 0 ] && [ -f $BACKUP_FILE ]; then
+  echo "✅ Backup successful: $BACKUP_FILE"
+  SIZE=$(du -h $BACKUP_FILE | cut -f1)
+  echo "Size: $SIZE"
+else
+  echo "❌ Backup failed!"
+  mail -s "Backup Failed" admin@example.com <<< "Database backup failed at $(date)"
+  exit 1
+fi
+
+# 7. Verify backup integrity
+pg_restore --list $BACKUP_FILE > /dev/null
+if [ $? -eq 0 ]; then
+  echo "✅ Backup file is valid"
+else
+  echo "❌ Backup file is corrupted!"
+  exit 1
+fi
+```
+
+---
+
+### Recovery Scenarios
+
+#### Scenario 1: Accidental DELETE
+
+```sql
+-- Oops! Deleted all users
+DELETE FROM users;  -- No WHERE clause!
+
+-- Solution 1: Restore from backup
+pg_restore -U postgres -d mydb -t users /backups/mydb_latest.dump
+
+-- Solution 2: Point-in-time recovery (if using WAL)
+-- Restore to 5 minutes before mistake
+pg_restore --target-time='2024-12-29 14:55:00' /backups/basebackup
+
+-- Prevention: Always use transactions
+BEGIN;
+DELETE FROM users WHERE city = 'Test';
+SELECT COUNT(*) FROM users;  -- Verify count before commit
+ROLLBACK;  -- Undo if wrong
+-- or
+COMMIT;  -- Apply if correct
+```
+
+---
+
+#### Scenario 2: Corrupted Database
+
+```bash
+# PostgreSQL: Check for corruption
+postgres -D /var/lib/postgresql/data --single -P disable_system_indexes
+
+# If corruption detected, restore from backup
+systemctl stop postgresql
+rm -rf /var/lib/postgresql/data/*
+pg_basebackup -D /var/lib/postgresql/data -U replication_user
+systemctl start postgresql
+```
+
+---
+
+#### Scenario 3: Complete Server Loss
+
+```bash
+# Recovery steps:
+# 1. Provision new server
+# 2. Install PostgreSQL
+# 3. Restore from off-site backup
+aws s3 cp s3://my-db-backups/mydb_20241229.dump /tmp/
+pg_restore -U postgres -d mydb /tmp/mydb_20241229.dump
+
+# 4. Point-in-time recovery (if needed)
+# 5. Update application connection strings
+# 6. Test thoroughly before going live
+```
+
+---
+
+## Database Testing
+
+### 1. Unit Testing (Mock Database)
+
+```javascript
+const { jest } = require('@jest/globals');
+
+// Mock database
+const mockDb = {
+  query: jest.fn()
+};
+
+describe('UserService', () => {
+  it('should create user', async () => {
+    // Arrange
+    mockDb.query.mockResolvedValue({ 
+      rows: [{ id: 1, name: 'Test User', email: 'test@example.com' }] 
+    });
+    
+    const userService = new UserService(mockDb);
+    
+    // Act
+    const user = await userService.createUser({ 
+      name: 'Test User', 
+      email: 'test@example.com' 
+    });
+    
+    // Assert
+    expect(mockDb.query).toHaveBeenCalledWith(
+      'INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *',
+      ['Test User', 'test@example.com']
+    );
+    expect(user.id).toBe(1);
+    expect(user.name).toBe('Test User');
+  });
+  
+  it('should handle database errors', async () => {
+    // Arrange
+    mockDb.query.mockRejectedValue(new Error('Connection failed'));
+    const userService = new UserService(mockDb);
+    
+    // Act & Assert
+    await expect(userService.createUser({ name: 'Test', email: 'test@example.com' }))
+      .rejects.toThrow('Connection failed');
+  });
+});
+```
+
+---
+
+### 2. Integration Testing (Test Database)
+
+```javascript
+const { Pool } = require('pg');
+
+describe('Database Integration', () => {
+  let pool;
+  
+  beforeAll(async () => {
+    // Create test database
+    pool = new Pool({
+      host: 'localhost',
+      database: 'mydb_test',
+      user: 'test_user',
+      password: 'test_password'
+    });
+    
+    // Run migrations
+    await runMigrations(pool);
+  });
+  
+  afterAll(async () => {
+    await pool.end();
+  });
+  
+  beforeEach(async () => {
+    // Clear data before each test
+    await pool.query('TRUNCATE users, orders, products CASCADE');
+  });
+  
+  it('should create and retrieve user', async () => {
+    // Insert
+    const insertResult = await pool.query(
+      'INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *',
+      ['Test User', 'test@example.com']
+    );
+    
+    const userId = insertResult.rows[0].id;
+    
+    // Retrieve
+    const selectResult = await pool.query(
+      'SELECT * FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    expect(selectResult.rows[0].name).toBe('Test User');
+    expect(selectResult.rows[0].email).toBe('test@example.com');
+  });
+  
+  it('should enforce unique email constraint', async () => {
+    await pool.query(
+      'INSERT INTO users (name, email) VALUES ($1, $2)',
+      ['User 1', 'duplicate@example.com']
+    );
+    
+    // Try to insert duplicate email
+    await expect(
+      pool.query(
+        'INSERT INTO users (name, email) VALUES ($1, $2)',
+        ['User 2', 'duplicate@example.com']
+      )
+    ).rejects.toThrow(/unique constraint/);
+  });
+  
+  it('should handle transactions correctly', async () => {
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+      
+      await client.query(
+        'INSERT INTO users (name, email) VALUES ($1, $2)',
+        ['User 1', 'user1@example.com']
+      );
+      
+      await client.query(
+        'INSERT INTO users (name, email) VALUES ($1, $2)',
+        ['User 2', 'user2@example.com']
+      );
+      
+      await client.query('COMMIT');
+      
+      const result = await pool.query('SELECT COUNT(*) FROM users');
+      expect(parseInt(result.rows[0].count)).toBe(2);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+});
+```
+
+---
+
+### 3. Load Testing
+
+```bash
+# PostgreSQL: pgbench
+# Initialize test data
+pgbench -i -s 100 testdb  # Scale factor 100
+
+# Run load test
+pgbench -c 10 -j 2 -t 1000 testdb
+# -c 10: 10 concurrent clients
+# -j 2: 2 threads
+# -t 1000: 1000 transactions per client
+
+# Results:
+# transaction type: <builtin: TPC-B (sort of)>
+# number of transactions actually processed: 10000
+# latency average = 15.844 ms
+# tps = 631.135591 (including connections establishing)
+
+# Custom SQL script
+# bench.sql:
+# \set id random(1, 100000)
+# SELECT * FROM users WHERE id = :id;
+
+pgbench -c 10 -j 2 -t 1000 -f bench.sql testdb
+```
+
+---
+
+## Memory Tips & Mnemonics
+
+### 1. ACID: "**A Car Is Durable**"
+- **A** - **A**tomicity (All or nothing - bank transfer)
+- **C** - **C**onsistency (Rules followed - no negative balance)
+- **I** - **I**solation (No interference - can't buy last item twice)
+- **D** - **D**urability (Survives crashes - committed data permanent)
+
+### 2. SQL Index Types: "**B**asically **H**ashing **G**ives **P**erformance"
+- **B** - **B**-Tree (default, range queries)
+- **H** - **H**ash (exact matches only)
+- **G** - **G**IN (arrays, JSON, full-text)
+- **P** - **P**artial (subset of data)
+
+### 3. Scaling: "**V**ery **H**igh **S**hould **R**eplicate"
+- **V** - **V**ertical (scale up - more power)
+- **H** - **H**orizontal (scale out - more servers)
+- **S** - **S**harding (write scaling - split data)
+- **R** - **R**eplicas (read scaling - copy data)
+
+### 4. Query Optimization: "**ISELW**ind" (I Select Wind)
+- **I** - **I**ndexes (create on frequently queried columns)
+- **S** - **S**elect specific columns (not SELECT *)
+- **E** - **E**XPLAIN ANALYZE (understand query plan)
+- **L** - **L**IMIT (paginate results)
+- **W** - **W**HERE before JOIN (filter early)
+
+### 5. SQL vs NoSQL: "**SAFE**" vs "**RASH**"
+
+**SQL (SAFE):**
+- **S** - **S**trong consistency (ACID)
+- **A** - **A**dvanced queries (JOINs, aggregations)
+- **F** - **F**oreign keys (relationships)
+- **E** - **E**nterprise (banking, compliance)
+
+**NoSQL (RASH):**
+- **R** - **R**apid development (flexible schema)
+- **A** - **A**ggregations (horizontal scaling)
+- **S** - **S**imple queries (key-value lookups)
+- **H** - **H**uge scale (millions of users)
+
+### 6. CAP Theorem: "**CAP**tain's Choice"
+You can only have **2 of 3**:
+- **C** - **C**onsistency
+- **A** - **A**vailability
+- **P** - **P**artition tolerance
+
+**CA** - Traditional SQL (single server)
+**CP** - MongoDB (consistent but may be unavailable during partition)
+**AP** - Cassandra (available but eventually consistent)
+
+---
