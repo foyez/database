@@ -4344,3 +4344,1567 @@ START: Choose Your Database
 - **Elasticsearch**: Product search needs full-text capabilities
 
 ---
+
+## Indexing Strategies
+
+### What is an Index?
+
+**Real-Life Analogy:** A book's index at the back. Instead of reading all 500 pages to find "PostgreSQL", you look it up in the index and jump to page 147.
+
+**Definition:** An index is a data structure that improves the speed of data retrieval operations on a database table at the cost of additional writes and storage space.
+
+### Without vs With Index
+
+```sql
+-- PostgreSQL Example
+
+-- ❌ WITHOUT Index: Sequential Scan (Slow)
+SELECT * FROM users WHERE email = 'foyez@example.com';
+-- Scans ALL 1,000,000 rows one by one
+-- Time: O(n) = ~2000ms
+
+-- ✅ WITH Index: Index Scan (Fast)
+CREATE INDEX idx_users_email ON users(email);
+
+SELECT * FROM users WHERE email = 'foyez@example.com';
+-- Uses index to jump directly to the row
+-- Time: O(log n) = ~50ms
+-- 40x faster!
+```
+
+```javascript
+// MongoDB Example
+
+// ❌ WITHOUT Index: Collection Scan
+db.users.find({ email: "foyez@example.com" });
+// Scans entire collection
+// Time: ~2000ms for 1M documents
+
+// ✅ WITH Index: Index Scan
+db.users.createIndex({ email: 1 });
+
+db.users.find({ email: "foyez@example.com" });
+// Uses index
+// Time: ~50ms
+// 40x faster!
+```
+
+**Performance Comparison:**
+```
+1,000,000 rows:
+- Sequential scan: ~2000ms
+- Index scan: ~50ms
+- 40x faster!
+```
+
+---
+
+## SQL Indexing (PostgreSQL/MySQL)
+
+### Types of SQL Indexes
+
+#### 1. B-Tree Index (Default, Most Common)
+
+**Best for:** Equality, range queries, sorting
+
+```sql
+-- Create B-Tree index
+CREATE INDEX idx_products_price ON products(price);
+
+-- Queries that use this index:
+SELECT * FROM products WHERE price = 99.99;          -- Exact match
+SELECT * FROM products WHERE price > 50;             -- Range
+SELECT * FROM products WHERE price BETWEEN 50 AND 150;
+SELECT * FROM products ORDER BY price;               -- Sorting
+SELECT MIN(price), MAX(price) FROM products;         -- Min/Max
+```
+
+**Structure (Balanced Tree):**
+```
+        [50]
+       /    \
+    [25]    [75]
+    /  \    /  \
+ [10][40][60][90]
+```
+
+**Characteristics:**
+- Balanced tree structure
+- O(log n) lookup time
+- Works for <, <=, =, >=, >
+- Default index type
+- Self-balancing
+
+---
+
+#### 2. Hash Index
+
+**Best for:** Exact equality matches only
+
+```sql
+-- Create hash index (PostgreSQL)
+CREATE INDEX idx_users_email_hash ON users USING HASH (email);
+
+-- ✅ Uses index (exact match)
+SELECT * FROM users WHERE email = 'foyez@example.com';
+
+-- ❌ Does NOT use index (pattern matching)
+SELECT * FROM users WHERE email LIKE '%example.com';
+
+-- ❌ Does NOT use index (range)
+SELECT * FROM users WHERE email > 'a@example.com';
+```
+
+**Characteristics:**
+- O(1) lookup for exact matches
+- Doesn't support range queries
+- Doesn't support sorting
+- Faster than B-Tree for equality, but limited
+
+---
+
+#### 3. GIN (Generalized Inverted Index)
+
+**Best for:** Full-text search, arrays, JSON
+
+```sql
+-- For array columns
+CREATE TABLE products (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(200),
+  tags VARCHAR[]  -- Array
+);
+
+CREATE INDEX idx_products_tags ON products USING GIN (tags);
+
+-- Query: Find products with specific tags
+SELECT * FROM products WHERE tags @> ARRAY['electronics', 'laptop'];
+-- Very fast with GIN index!
+
+-- For JSONB columns
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  preferences JSONB
+);
+
+CREATE INDEX idx_users_preferences ON users USING GIN (preferences);
+
+-- Query: Find users with specific JSON property
+SELECT * FROM users 
+WHERE preferences @> '{"notifications": {"email": true}}';
+
+-- For full-text search
+ALTER TABLE products ADD COLUMN search_vector tsvector;
+
+CREATE INDEX idx_products_search ON products USING GIN (search_vector);
+
+UPDATE products 
+SET search_vector = to_tsvector('english', name || ' ' || description);
+
+-- Query: Full-text search
+SELECT * FROM products 
+WHERE search_vector @@ to_tsquery('english', 'gaming & laptop');
+```
+
+**Characteristics:**
+- Perfect for contains operators (@>, @@)
+- Larger index size than B-Tree
+- Slower inserts/updates
+- Essential for JSON, arrays, full-text
+
+---
+
+#### 4. Partial Index
+
+**Best for:** Indexing subset of data
+
+```sql
+-- Only index active products
+CREATE INDEX idx_active_products ON products(name) 
+WHERE is_active = true;
+
+-- Saves space! If 90% products are inactive, index is 10x smaller
+
+-- ✅ Uses index
+SELECT * FROM products 
+WHERE name = 'Laptop' AND is_active = true;
+
+-- ❌ Does NOT use index (is_active = false not in index)
+SELECT * FROM products 
+WHERE name = 'Laptop' AND is_active = false;
+
+-- More examples
+CREATE INDEX idx_high_value_orders ON orders(user_id, created_at)
+WHERE total > 1000;  -- Only index large orders
+
+CREATE INDEX idx_recent_posts ON posts(created_at)
+WHERE created_at > NOW() - INTERVAL '30 days';  -- Only recent
+
+CREATE INDEX idx_pending_orders ON orders(created_at DESC)
+WHERE status = 'pending';  -- Only pending orders
+```
+
+**Benefits:**
+- Smaller index size (faster)
+- Reduced maintenance cost
+- Targets specific query patterns
+
+---
+
+#### 5. Composite Index (Multiple Columns)
+
+**Best for:** Queries filtering on multiple columns
+
+```sql
+-- Create composite index
+CREATE INDEX idx_orders_user_status ON orders(user_id, status);
+
+-- ✅ Uses index (both columns, in order)
+SELECT * FROM orders 
+WHERE user_id = 1 AND status = 'pending';
+
+-- ✅ Uses index (first column only - leftmost prefix)
+SELECT * FROM orders WHERE user_id = 1;
+
+-- ⚠️ Does NOT use index efficiently (second column without first)
+SELECT * FROM orders WHERE status = 'pending';
+-- Will do full scan or index-only scan (slow)
+
+-- Column Order Rule: Most selective column FIRST
+-- ❌ BAD: status has only 5 values (low selectivity)
+CREATE INDEX idx_orders_bad ON orders(status, user_id);
+
+-- ✅ GOOD: user_id has millions of unique values (high selectivity)
+CREATE INDEX idx_orders_good ON orders(user_id, status);
+
+-- Check selectivity:
+SELECT 
+  COUNT(DISTINCT user_id) as user_cardinality,  -- High = selective
+  COUNT(DISTINCT status) as status_cardinality   -- Low = not selective
+FROM orders;
+-- Results: 1,000,000 vs 5 → user_id is more selective
+```
+
+**Leftmost Prefix Rule:**
+```sql
+-- Index on (a, b, c)
+CREATE INDEX idx_abc ON table(a, b, c);
+
+-- These queries can use the index:
+WHERE a = 1                    -- ✅ Uses index on 'a'
+WHERE a = 1 AND b = 2          -- ✅ Uses index on 'a, b'
+WHERE a = 1 AND b = 2 AND c = 3 -- ✅ Uses full index
+
+-- These queries CANNOT use the index efficiently:
+WHERE b = 2                    -- ❌ Skips 'a'
+WHERE c = 3                    -- ❌ Skips 'a' and 'b'
+WHERE b = 2 AND c = 3          -- ❌ Skips 'a'
+```
+
+---
+
+#### 6. Covering Index (Index-Only Scan)
+
+**Definition:** Index contains ALL columns needed by query
+
+```sql
+-- Query needs: email, name, city
+SELECT name, city FROM users WHERE email = 'foyez@example.com';
+
+-- ❌ Regular index: Index lookup + table lookup (2 steps)
+CREATE INDEX idx_users_email ON users(email);
+
+-- ✅ Covering index: All data in index (1 step!)
+CREATE INDEX idx_users_email_covering ON users(email) 
+INCLUDE (name, city);
+
+-- PostgreSQL also supports:
+CREATE INDEX idx_users_covering ON users(email, name, city);
+
+-- Check if query uses covering index:
+EXPLAIN SELECT name, city FROM users WHERE email = 'foyez@example.com';
+-- Look for "Index Only Scan"
+```
+
+**Benefits:**
+- Faster queries (no table lookup needed)
+- Especially good for read-heavy workloads
+- Can turn 2-step query into 1-step
+
+**Trade-offs:**
+- Larger index size
+- Slower writes (more data to update in index)
+
+---
+
+### When to Create SQL Indexes
+
+#### ✅ CREATE Index When:
+
+```sql
+-- 1. Column used in WHERE clause frequently
+SELECT * FROM products WHERE category_id = 1;
+-- → CREATE INDEX idx_products_category ON products(category_id);
+
+-- 2. Column used in JOIN conditions
+SELECT * FROM orders o JOIN users u ON o.user_id = u.id;
+-- → CREATE INDEX idx_orders_user_id ON orders(user_id);
+
+-- 3. Column used in ORDER BY frequently
+SELECT * FROM products ORDER BY created_at DESC LIMIT 20;
+-- → CREATE INDEX idx_products_created_at ON products(created_at DESC);
+
+-- 4. High cardinality column (many unique values)
+SELECT * FROM users WHERE email = '...';
+-- → CREATE INDEX idx_users_email ON users(email);
+
+-- 5. Large table (1000+ rows)
+-- Small tables don't benefit from indexes
+```
+
+#### ❌ DON'T CREATE Index When:
+
+```sql
+-- 1. Small table (< 1000 rows)
+-- Sequential scan faster than index lookup overhead
+
+-- 2. Low cardinality column (few unique values)
+-- Example: gender (2 values), status (5 values)
+SELECT * FROM users WHERE gender = 'M';
+-- Sequential scan of half the table is faster
+
+-- 3. Column rarely used in queries
+-- Index maintenance cost outweighs benefits
+
+-- 4. Write-heavy table
+-- Every INSERT/UPDATE/DELETE must update indexes
+-- Can significantly slow down writes
+
+-- 5. Column with many NULLs
+-- Index efficiency decreases
+```
+
+---
+
+### SQL Index Maintenance
+
+```sql
+-- 1. Check index usage
+SELECT 
+  schemaname,
+  tablename,
+  indexname,
+  idx_scan,  -- How many times index used
+  idx_tup_read,
+  idx_tup_fetch
+FROM pg_stat_user_indexes
+ORDER BY idx_scan ASC;
+-- idx_scan = 0 means index never used → DROP it!
+
+-- 2. Drop unused index
+DROP INDEX idx_users_unused_column;
+
+-- 3. Rebuild index (fix fragmentation)
+REINDEX INDEX idx_users_email;
+REINDEX TABLE users;  -- Rebuild all indexes on table
+
+-- 4. Analyze table (update statistics for query planner)
+ANALYZE users;
+
+-- 5. Check index size
+SELECT 
+  indexname,
+  pg_size_pretty(pg_relation_size(indexrelid)) as size
+FROM pg_stat_user_indexes
+ORDER BY pg_relation_size(indexrelid) DESC;
+
+-- 6. Find duplicate indexes
+SELECT 
+  array_agg(indexname) as indexes,
+  tablename,
+  array_agg(indexdef) as definitions
+FROM pg_indexes
+WHERE schemaname = 'public'
+GROUP BY tablename, indexdef
+HAVING COUNT(*) > 1;
+```
+
+---
+
+### Indexing Strategy for E-Commerce
+
+```sql
+-- Users table
+CREATE INDEX idx_users_email ON users(email);  -- Login
+CREATE INDEX idx_users_city ON users(city);    -- Filtering
+
+-- Products table
+CREATE INDEX idx_products_category ON products(category_id);  -- Category pages
+CREATE INDEX idx_products_price ON products(price);           -- Price sorting
+CREATE INDEX idx_products_active ON products(is_active) WHERE is_active = true;
+CREATE INDEX idx_products_name_gin ON products USING gin(to_tsvector('english', name));  -- Search
+
+-- Orders table
+CREATE INDEX idx_orders_user_id ON orders(user_id);  -- User's orders
+CREATE INDEX idx_orders_status ON orders(status);    -- Admin panel
+CREATE INDEX idx_orders_created_at ON orders(created_at DESC);  -- Recent orders
+CREATE INDEX idx_orders_user_status ON orders(user_id, status);  -- User's pending orders
+
+-- Order items
+CREATE INDEX idx_order_items_order ON order_items(order_id);    -- Order details
+CREATE INDEX idx_order_items_product ON order_items(product_id); -- Product sales stats
+
+-- Reviews
+CREATE INDEX idx_reviews_product ON reviews(product_id);  -- Product reviews
+CREATE INDEX idx_reviews_approved ON reviews(is_approved) WHERE is_approved = true;
+```
+
+---
+
+## NoSQL Indexing (MongoDB)
+
+### Types of MongoDB Indexes
+
+#### 1. Single Field Index
+
+```javascript
+// Create single field index
+db.users.createIndex({ email: 1 });  // 1 = ascending, -1 = descending
+
+// Query uses index
+db.users.find({ email: "foyez@example.com" });
+
+// Check if index used
+db.users.find({ email: "foyez@example.com" }).explain("executionStats");
+// Look for "stage": "IXSCAN" (index scan)
+```
+
+---
+
+#### 2. Compound Index
+
+```javascript
+// Create compound index
+db.posts.createIndex({ "author.id": 1, status: 1, publishedAt: -1 });
+
+// ✅ Uses index (all fields, in order)
+db.posts.find({ "author.id": ObjectId("..."), status: "published" })
+  .sort({ publishedAt: -1 });
+
+// ✅ Uses index (leftmost prefix)
+db.posts.find({ "author.id": ObjectId("...") });
+
+// ⚠️ Does NOT use index efficiently (skips first field)
+db.posts.find({ status: "published" });
+
+// Column order matters (same as SQL)
+// Most selective field first
+db.posts.createIndex({ userId: 1, status: 1 });  // ✅ Good
+// vs
+db.posts.createIndex({ status: 1, userId: 1 });  // ❌ Bad
+```
+
+---
+
+#### 3. Multikey Index (Arrays)
+
+```javascript
+// Automatically created for array fields
+db.posts.createIndex({ tags: 1 });
+
+// Query: Find posts with specific tag
+db.posts.find({ tags: "mongodb" });
+// Index automatically handles array queries!
+
+// Query: Find posts with any of multiple tags
+db.posts.find({ tags: { $in: ["mongodb", "database"] } });
+
+// Query: Find posts with all tags
+db.posts.find({ tags: { $all: ["mongodb", "nosql"] } });
+```
+
+**Important:** Only ONE array field can be indexed in compound index
+```javascript
+// ❌ INVALID: Both fields are arrays
+db.posts.createIndex({ tags: 1, categories: 1 });
+// ERROR: Cannot index parallel arrays
+
+// ✅ VALID: Only one array field
+db.posts.createIndex({ tags: 1, status: 1 });
+```
+
+---
+
+#### 4. Text Index (Full-Text Search)
+
+```javascript
+// Create text index
+db.posts.createIndex({
+  title: "text",
+  content: "text",
+  tags: "text"
+});
+
+// Only ONE text index per collection
+// But can include multiple fields
+
+// Search query
+db.posts.find({
+  $text: { $search: "mongodb tutorial guide" }
+});
+
+// Search with relevance score
+db.posts.find(
+  { $text: { $search: "mongodb tutorial" } },
+  { score: { $meta: "textScore" } }
+).sort({ score: { $meta: "textScore" } });
+
+// Search with phrases
+db.posts.find({
+  $text: { $search: "\"complete guide\"" }  // Exact phrase
+});
+
+// Search with exclusion
+db.posts.find({
+  $text: { $search: "mongodb -mysql" }  // mongodb but not mysql
+});
+```
+
+**Text Index Weights:**
+```javascript
+// Give more weight to title than content
+db.posts.createIndex(
+  {
+    title: "text",
+    content: "text"
+  },
+  {
+    weights: {
+      title: 10,      // 10x importance
+      content: 1
+    },
+    name: "posts_text_index"
+  }
+);
+```
+
+---
+
+#### 5. Geospatial Index (2dsphere)
+
+```javascript
+// Create geospatial index
+db.restaurants.createIndex({ location: "2dsphere" });
+
+// Location stored as GeoJSON
+{
+  name: "Restaurant Name",
+  location: {
+    type: "Point",
+    coordinates: [longitude, latitude]  // [90.4125, 23.8103] for Bangladesh
+  }
+}
+
+// Query: Find restaurants near a point
+db.restaurants.find({
+  location: {
+    $near: {
+      $geometry: {
+        type: "Point",
+        coordinates: [90.4125, 23.8103]
+      },
+      $maxDistance: 5000  // 5km radius
+    }
+  }
+});
+
+// Query: Find within polygon
+db.restaurants.find({
+  location: {
+    $geoWithin: {
+      $geometry: {
+        type: "Polygon",
+        coordinates: [[
+          [90.0, 23.0],
+          [91.0, 23.0],
+          [91.0, 24.0],
+          [90.0, 24.0],
+          [90.0, 23.0]
+        ]]
+      }
+    }
+  }
+});
+```
+
+---
+
+#### 6. Partial Index (Sparse Index)
+
+```javascript
+// Only index documents where field exists
+db.posts.createIndex(
+  { publishedAt: 1 },
+  { sparse: true }  // Only index if publishedAt exists
+);
+
+// Only index documents matching condition
+db.posts.createIndex(
+  { publishedAt: -1 },
+  {
+    partialFilterExpression: {
+      status: "published",
+      "stats.views": { $gte: 1000 }
+    }
+  }
+);
+// Only indexes published posts with 1000+ views
+
+// Benefits: Smaller index, faster maintenance
+```
+
+---
+
+#### 7. TTL Index (Time-To-Live)
+
+```javascript
+// Auto-delete documents after time
+db.sessions.createIndex(
+  { createdAt: 1 },
+  { expireAfterSeconds: 3600 }  // Delete after 1 hour
+);
+
+// Document
+{
+  sessionId: "abc123",
+  userId: 1,
+  createdAt: new Date()  // Must be Date type
+}
+
+// MongoDB automatically deletes this document 1 hour after createdAt
+
+// Use cases:
+// - Session storage
+// - Temporary cache
+// - Event logs
+// - Rate limiting counters
+```
+
+---
+
+#### 8. Unique Index
+
+```javascript
+// Ensure unique values
+db.users.createIndex({ email: 1 }, { unique: true });
+
+// Attempt to insert duplicate fails
+db.users.insertOne({ email: "existing@example.com" });
+// ERROR: E11000 duplicate key error
+
+// Compound unique index
+db.followers.createIndex(
+  { followerId: 1, followingId: 1 },
+  { unique: true }
+);
+// Ensures user can't follow same person twice
+```
+
+---
+
+### MongoDB Index Management
+
+```javascript
+// 1. List all indexes
+db.posts.getIndexes();
+
+// 2. Drop index
+db.posts.dropIndex("idx_name");
+db.posts.dropIndex({ tags: 1 });  // By specification
+
+// 3. Drop all indexes (except _id)
+db.posts.dropIndexes();
+
+// 4. Rebuild indexes
+db.posts.reIndex();
+
+// 5. Check index usage
+db.posts.aggregate([{ $indexStats: {} }]);
+
+// 6. Check index size
+db.posts.stats().indexSizes;
+
+// 7. Hide index (test before dropping)
+db.posts.hideIndex("idx_tags");
+// Queries won't use it, but it's not deleted
+db.posts.unhideIndex("idx_tags");
+
+// 8. Analyze query performance
+db.posts.find({ tags: "mongodb" }).explain("executionStats");
+
+// Look for:
+// - "stage": "IXSCAN" (good - using index)
+// - "stage": "COLLSCAN" (bad - full collection scan)
+// - "executionTimeMillis": execution time
+// - "totalDocsExamined": documents scanned
+// - "nReturned": documents returned
+```
+
+---
+
+### When to Create MongoDB Indexes
+
+```javascript
+// ✅ CREATE Index When:
+
+// 1. Field used in find() queries
+db.users.find({ city: "Dhaka" });
+// → db.users.createIndex({ city: 1 });
+
+// 2. Field used in sort()
+db.posts.find().sort({ publishedAt: -1 });
+// → db.posts.createIndex({ publishedAt: -1 });
+
+// 3. High cardinality field
+db.users.find({ email: "..." });
+// → db.users.createIndex({ email: 1 });
+
+// 4. Embedded document fields
+db.posts.find({ "author.id": ObjectId("...") });
+// → db.posts.createIndex({ "author.id": 1 });
+
+// 5. Array fields
+db.posts.find({ tags: "mongodb" });
+// → db.posts.createIndex({ tags: 1 });
+
+// ❌ DON'T CREATE Index When:
+
+// 1. Small collection (< 1000 docs)
+// 2. Field has low cardinality
+// 3. Write-heavy collection
+// 4. Field rarely queried
+// 5. Result set is large portion of collection
+```
+
+---
+
+## Query Optimization
+
+### SQL Query Optimization
+
+#### 1. Use EXPLAIN ANALYZE
+
+**The #1 tool for optimization**
+
+```sql
+-- PostgreSQL: Show execution plan
+EXPLAIN 
+SELECT * FROM orders WHERE user_id = 1 AND status = 'pending';
+
+-- Show ACTUAL execution time
+EXPLAIN ANALYZE
+SELECT * FROM orders WHERE user_id = 1 AND status = 'pending';
+```
+
+**Reading EXPLAIN Output:**
+
+```
+❌ Before optimization:
+Seq Scan on orders  (cost=0.00..180.00 rows=10 width=100) 
+  (actual time=0.031..2.456 rows=5 loops=1)
+  Filter: ((user_id = 1) AND ((status)::text = 'pending'::text))
+  Rows Removed by Filter: 995
+Planning Time: 0.123 ms
+Execution Time: 2.489 ms
+
+❌ Problem: Sequential Scan (scanning all rows) = slow!
+✅ Solution: Create index on (user_id, status)
+
+✅ After creating index:
+Index Scan using idx_orders_user_status on orders  
+  (cost=0.29..8.31 rows=5 width=100) 
+  (actual time=0.021..0.034 rows=5 loops=1)
+  Index Cond: ((user_id = 1) AND ((status)::text = 'pending'::text))
+Planning Time: 0.089 ms
+Execution Time: 0.056 ms
+
+✅ Result: 44x faster! (2.489ms → 0.056ms)
+```
+
+---
+
+#### 2. SELECT Only Needed Columns
+
+```sql
+-- ❌ BAD: Retrieves all columns
+SELECT * FROM products;
+-- If table has 20 columns, wastes bandwidth
+
+-- ✅ GOOD: Only needed columns
+SELECT id, name, price FROM products;
+
+-- Real impact:
+-- Table: 20 columns, 1MB per row
+-- SELECT *: 1000 rows = 1GB transferred
+-- SELECT id, name, price: 1000 rows = 100MB
+-- 10x less data!
+```
+
+---
+
+#### 3. Use LIMIT for Pagination
+
+```sql
+-- ❌ BAD: Retrieves all rows
+SELECT * FROM products ORDER BY created_at DESC;
+-- Retrieves 100,000 products, shows 20
+
+-- ✅ GOOD: Database only returns needed rows
+SELECT * FROM products 
+ORDER BY created_at DESC 
+LIMIT 20 OFFSET 0;  -- Page 1
+
+SELECT * FROM products 
+ORDER BY created_at DESC 
+LIMIT 20 OFFSET 20;  -- Page 2
+
+-- ✅ BETTER: Keyset pagination (faster for large offsets)
+-- Instead of OFFSET, use WHERE clause
+SELECT * FROM products 
+WHERE created_at < '2024-01-15 10:30:00'
+ORDER BY created_at DESC 
+LIMIT 20;
+```
+
+---
+
+#### 4. Avoid SELECT DISTINCT When Possible
+
+```sql
+-- ❌ SLOW: DISTINCT sorts entire result set
+SELECT DISTINCT city FROM users;
+
+-- ✅ FASTER: GROUP BY (usually faster)
+SELECT city FROM users GROUP BY city;
+
+-- ✅ BEST: Fix data model to avoid duplicates
+-- Or use EXISTS instead
+```
+
+---
+
+#### 5. Use EXISTS Instead of IN for Large Subqueries
+
+```sql
+-- ❌ SLOW: IN with large subquery
+SELECT * FROM products
+WHERE id IN (SELECT product_id FROM order_items);
+-- Subquery returns all IDs, then does lookup
+
+-- ✅ FAST: EXISTS (stops at first match)
+SELECT * FROM products p
+WHERE EXISTS (
+  SELECT 1 FROM order_items oi 
+  WHERE oi.product_id = p.id
+);
+-- Stops checking once found
+```
+
+---
+
+#### 6. Avoid Functions on Indexed Columns
+
+```sql
+-- ❌ BAD: Can't use index
+SELECT * FROM users WHERE LOWER(email) = 'foyez@example.com';
+-- Function on column prevents index usage
+
+-- ✅ GOOD: Store data in consistent case
+SELECT * FROM users WHERE email = 'foyez@example.com';
+
+-- ✅ Alternative: Functional index
+CREATE INDEX idx_users_email_lower ON users(LOWER(email));
+-- Now function queries can use index
+SELECT * FROM users WHERE LOWER(email) = 'foyez@example.com';
+```
+
+---
+
+#### 7. Use JOIN Instead of Subqueries
+
+```sql
+-- ❌ SLOW: Correlated subquery
+SELECT 
+  u.name,
+  (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) as order_count
+FROM users u;
+-- Subquery runs for EACH user (N queries)
+
+-- ✅ FAST: JOIN with GROUP BY
+SELECT 
+  u.name,
+  COUNT(o.id) as order_count
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+GROUP BY u.id, u.name;
+-- Single query with JOIN
+```
+
+---
+
+#### 8. Batch Operations
+
+```sql
+-- ❌ BAD: Multiple queries (N round trips)
+INSERT INTO products (name, price) VALUES ('Product 1', 10);
+INSERT INTO products (name, price) VALUES ('Product 2', 20);
+INSERT INTO products (name, price) VALUES ('Product 3', 30);
+-- 3 round trips to database
+
+-- ✅ GOOD: Single batch query (1 round trip)
+INSERT INTO products (name, price) VALUES 
+  ('Product 1', 10),
+  ('Product 2', 20),
+  ('Product 3', 30);
+-- 1 round trip
+
+-- ✅ BETTER: Use COPY for bulk inserts (PostgreSQL)
+COPY products(name, price) FROM '/path/to/products.csv' WITH CSV;
+-- Can be 100x faster for large datasets
+```
+
+---
+
+#### 9. Use WHERE Before JOIN (Let Optimizer Handle It)
+
+```sql
+-- Modern query optimizers handle this, but be aware:
+
+-- Conceptually slower (JOINs all, then filters)
+SELECT u.name, o.total
+FROM users u
+JOIN orders o ON u.id = o.user_id
+WHERE u.city = 'Dhaka';
+
+-- Conceptually faster (filters first, then JOINs)
+SELECT u.name, o.total
+FROM (SELECT * FROM users WHERE city = 'Dhaka') u
+JOIN orders o ON u.id = o.user_id;
+
+-- But in practice, modern optimizers do the same thing!
+-- Use EXPLAIN to verify
+```
+
+---
+
+### MongoDB Query Optimization
+
+#### 1. Use explain()
+
+```javascript
+// Check if query uses index
+db.posts.find({ tags: "mongodb" }).explain("executionStats");
+
+// Look for:
+{
+  "executionStats": {
+    "executionTimeMillis": 15,        // ✅ Low is good
+    "totalDocsExamined": 100,         // Documents scanned
+    "nReturned": 100,                 // Documents returned
+    "executionStages": {
+      "stage": "IXSCAN"               // ✅ Using index (good)
+      // "stage": "COLLSCAN"          // ❌ Collection scan (bad)
+    }
+  }
+}
+
+// Ideal: totalDocsExamined ≈ nReturned
+// If totalDocsExamined >> nReturned, query is inefficient
+```
+
+---
+
+#### 2. Project Only Needed Fields
+
+```javascript
+// ❌ BAD: Returns all fields
+db.posts.find({ status: "published" });
+
+// ✅ GOOD: Only needed fields
+db.posts.find(
+  { status: "published" },
+  { title: 1, slug: 1, publishedAt: 1, _id: 0 }
+);
+// 1 = include, 0 = exclude
+```
+
+---
+
+#### 3. Use Covered Queries
+
+```javascript
+// Index contains all fields in query + projection
+db.posts.createIndex({ status: 1, publishedAt: 1, title: 1 });
+
+db.posts.find(
+  { status: "published" },
+  { title: 1, publishedAt: 1, _id: 0 }
+).explain("executionStats");
+
+// Look for "stage": "IXSCAN" with totalDocsExamined = 0
+// This means query answered entirely from index!
+```
+
+---
+
+#### 4. Limit Results
+
+```javascript
+// ✅ Always use limit for pagination
+db.posts.find({ status: "published" })
+  .sort({ publishedAt: -1 })
+  .limit(20)
+  .skip(0);
+
+// ⚠️ SKIP is slow for large offsets
+// Better: Use range queries
+db.posts.find({
+  status: "published",
+  publishedAt: { $lt: lastSeenDate }
+})
+.sort({ publishedAt: -1 })
+.limit(20);
+```
+
+---
+
+#### 5. Avoid Large Documents
+
+```javascript
+// ❌ BAD: Embedding grows huge
+{
+  _id: ObjectId("post_id"),
+  title: "Post",
+  comments: [/* 10,000 comments */]  // 16MB limit!
+}
+
+// ✅ GOOD: Reference in separate collection
+// posts collection
+{
+  _id: ObjectId("post_id"),
+  title: "Post",
+  stats: { commentsCount: 10000 }
+}
+
+// comments collection
+db.comments.find({ postId: ObjectId("post_id") })
+  .limit(20);
+```
+
+---
+
+#### 6. Use Aggregation Efficiently
+
+```javascript
+// ✅ Put $match early in pipeline (uses index)
+db.posts.aggregate([
+  { $match: { status: "published" } },  // First! Uses index
+  { $sort: { publishedAt: -1 } },
+  { $limit: 10 },
+  { $lookup: { ... } },  // Expensive operations later
+  { $project: { ... } }
+]);
+
+// ❌ BAD: $match after expensive operations
+db.posts.aggregate([
+  { $lookup: { ... } },  // Processes all documents
+  { $match: { status: "published" } }  // Too late!
+]);
+```
+
+---
+
+#### 7. Avoid $where and $expr When Possible
+
+```javascript
+// ❌ SLOW: JavaScript execution, can't use index
+db.products.find({
+  $where: "this.price > this.cost * 1.5"
+});
+
+// ✅ FAST: Use query operators
+db.products.find({
+  $expr: {
+    $gt: ["$price", { $multiply: ["$cost", 1.5] }]
+  }
+});
+
+// ✅ BETTER: Pre-calculate and store
+db.products.updateMany({}, [{
+  $set: { marginPercent: { 
+    $divide: [
+      { $subtract: ["$price", "$cost"] }, 
+      "$cost" 
+    ]
+  }}
+}]);
+
+db.products.find({ marginPercent: { $gt: 0.5 } });
+// Can use index on marginPercent!
+```
+
+---
+
+#### 8. Batch Operations
+
+```javascript
+// ❌ BAD: Multiple operations
+for (let product of products) {
+  await db.products.insertOne(product);
+}
+// N round trips
+
+// ✅ GOOD: Batch insert
+await db.products.insertMany(products);
+// 1 round trip
+
+// Bulk write operations
+const bulkOps = [
+  {
+    updateOne: {
+      filter: { _id: 1 },
+      update: { $inc: { "stats.views": 1 } }
+    }
+  },
+  {
+    insertOne: {
+      document: { name: "New Product" }
+    }
+  }
+];
+
+await db.products.bulkWrite(bulkOps);
+```
+
+---
+
+### Real-World Optimization Example
+
+**Before Optimization:**
+
+```sql
+SELECT 
+  p.*,
+  (SELECT AVG(rating) FROM reviews WHERE product_id = p.id) as avg_rating,
+  (SELECT COUNT(*) FROM reviews WHERE product_id = p.id) as review_count
+FROM products p
+WHERE p.category_id = 1
+ORDER BY (SELECT AVG(rating) FROM reviews WHERE product_id = p.id) DESC;
+
+-- Execution Time: 5234ms (5.2 seconds!)
+-- Problems:
+-- 1. Correlated subqueries (run for each product)
+-- 2. No indexes
+-- 3. Sorting by subquery result
+```
+
+**After Optimization:**
+
+```sql
+-- Step 1: Create indexes
+CREATE INDEX idx_products_category ON products(category_id);
+CREATE INDEX idx_reviews_product ON reviews(product_id);
+
+-- Step 2: Rewrite with JOIN
+SELECT 
+  p.*,
+  COALESCE(AVG(r.rating), 0) as avg_rating,
+  COUNT(r.id) as review_count
+FROM products p
+LEFT JOIN reviews r ON p.id = r.product_id
+WHERE p.category_id = 1
+GROUP BY p.id
+ORDER BY AVG(r.rating) DESC NULLS LAST;
+
+-- Execution Time: 47ms
+-- 111x faster! (5234ms → 47ms)
+```
+
+---
+
+## Caching Strategies
+
+### Why Cache?
+
+```
+Database Query: 50ms
+Cache Hit: 1ms
+50x faster!
+
+Benefits:
++ Reduces database load
++ Handles traffic spikes
++ Improves user experience
++ Saves money (fewer DB resources)
+```
+
+---
+
+### 1. Application-Level Caching (Redis)
+
+```javascript
+const Redis = require('ioredis');
+const redis = new Redis();
+
+// Without caching
+async function getProduct(id) {
+  const product = await db.query('SELECT * FROM products WHERE id = ?', [id]);
+  return product;
+}
+// Every call hits database: ~50ms
+
+// With caching
+async function getProductCached(id) {
+  const cacheKey = `product:${id}`;
+  
+  // 1. Try cache first
+  let product = await redis.get(cacheKey);
+  
+  if (product) {
+    console.log('Cache HIT!');
+    return JSON.parse(product);  // Fast! ~1ms
+  }
+  
+  console.log('Cache MISS');
+  
+  // 2. Cache miss - query database
+  product = await db.query('SELECT * FROM products WHERE id = ?', [id]);
+  
+  // 3. Store in cache for 5 minutes
+  await redis.setex(cacheKey, 300, JSON.stringify(product));
+  
+  return product;
+}
+
+// First call: Cache MISS (~50ms)
+// Subsequent calls: Cache HIT (~1ms)
+// After 5 minutes: Cache expires, MISS again
+```
+
+---
+
+### 2. Cache Invalidation
+
+**"There are only two hard things in Computer Science: cache invalidation and naming things." - Phil Karlton**
+
+```javascript
+// Strategy 1: Time-based (TTL)
+await redis.setex('products:trending', 300, data);  // Expires in 5 minutes
+
+// Strategy 2: Event-based (invalidate on change)
+async function updateProduct(id, data) {
+  // Update database
+  await db.query('UPDATE products SET ... WHERE id = ?', [id, data]);
+  
+  // Invalidate cache
+  await redis.del(`product:${id}`);
+  await redis.del('products:list');
+  await redis.del('products:trending');
+}
+
+// Strategy 3: Write-through (update cache and DB together)
+async function updateProductWriteThrough(id, data) {
+  // 1. Update database
+  await db.query('UPDATE products SET ... WHERE id = ?', [id, data]);
+  
+  // 2. Update cache
+  const updated = await db.query('SELECT * FROM products WHERE id = ?', [id]);
+  await redis.set(`product:${id}`, JSON.stringify(updated));
+}
+
+// Strategy 4: Cache-aside with versioning
+async function getProductVersioned(id) {
+  const version = await redis.get(`product:${id}:version`) || 0;
+  const cacheKey = `product:${id}:v${version}`;
+  
+  let product = await redis.get(cacheKey);
+  if (product) return JSON.parse(product);
+  
+  product = await db.query('SELECT * FROM products WHERE id = ?', [id]);
+  await redis.set(cacheKey, JSON.stringify(product));
+  return product;
+}
+
+// When updating, increment version
+async function updateProductVersioned(id, data) {
+  await db.query('UPDATE products SET ... WHERE id = ?', [id, data]);
+  await redis.incr(`product:${id}:version`);  // New version
+  // Old cache automatically becomes stale
+}
+```
+
+---
+
+### 3. Caching Patterns
+
+#### Pattern 1: Cache-Aside (Lazy Loading)
+
+```javascript
+// Application checks cache first
+async function getCacheAside(key) {
+  // 1. Try cache
+  let data = await redis.get(key);
+  if (data) return JSON.parse(data);
+  
+  // 2. Cache miss - load from DB
+  data = await db.query('...');
+  
+  // 3. Populate cache
+  await redis.setex(key, 3600, JSON.stringify(data));
+  
+  return data;
+}
+
+// ✅ Pros: Only caches requested data
+// ❌ Cons: First request is slow (cache miss)
+```
+
+---
+
+#### Pattern 2: Write-Through
+
+```javascript
+// Application writes to cache and DB
+async function setWriteThrough(key, data) {
+  // 1. Write to cache
+  await redis.set(key, JSON.stringify(data));
+  
+  // 2. Write to database
+  await db.query('INSERT INTO ...', [data]);
+}
+
+// ✅ Pros: Cache always up-to-date
+// ❌ Cons: Slower writes (2 operations)
+```
+
+---
+
+#### Pattern 3: Write-Behind (Write-Back)
+
+```javascript
+// Application writes to cache only
+// Background process syncs to DB
+async function setWriteBehind(key, data) {
+  // 1. Write to cache immediately
+  await redis.set(key, JSON.stringify(data));
+  
+  // 2. Add to write queue
+  await redis.lpush('write_queue', JSON.stringify({ key, data }));
+}
+
+// Background worker syncs to DB
+async function syncWorker() {
+  while (true) {
+    const item = await redis.brpop('write_queue', 0);
+    const { key, data } = JSON.parse(item[1]);
+    
+    await db.query('INSERT INTO ...', [data]);
+  }
+}
+
+// ✅ Pros: Very fast writes
+// ❌ Cons: Risk of data loss if cache fails before sync
+```
+
+---
+
+#### Pattern 4: Refresh-Ahead
+
+```javascript
+// Proactively refresh cache before expiration
+async function getRefreshAhead(key) {
+  let data = await redis.get(key);
+  
+  if (data) {
+    const ttl = await redis.ttl(key);
+    
+    // If TTL < 60 seconds, refresh in background
+    if (ttl < 60) {
+      refreshCache(key);  // Async, non-blocking
+    }
+    
+    return JSON.parse(data);
+  }
+  
+  // Cache miss - load synchronously
+  data = await loadAndCache(key);
+  return data;
+}
+
+async function refreshCache(key) {
+  const data = await db.query('...');
+  await redis.setex(key, 3600, JSON.stringify(data));
+}
+
+// ✅ Pros: Users rarely experience cache misses
+// ❌ Cons: More complex, may refresh unused data
+```
+
+---
+
+### 4. Database-Level Caching
+
+#### PostgreSQL Shared Buffers
+
+```sql
+-- PostgreSQL caches frequently accessed pages in RAM
+
+-- Check current setting
+SHOW shared_buffers;  -- Default: 128MB
+
+-- Increase for better performance (25% of total RAM recommended)
+ALTER SYSTEM SET shared_buffers = '4GB';
+-- Restart required
+
+-- Check cache hit rate
+SELECT 
+  sum(heap_blks_read) as heap_read,
+  sum(heap_blks_hit) as heap_hit,
+  sum(heap_blks_hit) / (sum(heap_blks_hit) + sum(heap_blks_read)) as cache_hit_ratio
+FROM pg_statio_user_tables;
+-- Aim for > 0.99 (99% cache hit rate)
+```
+
+---
+
+#### MongoDB WiredTiger Cache
+
+```javascript
+// MongoDB caches documents and indexes in RAM
+
+// Check cache statistics
+db.serverStatus().wiredTiger.cache
+
+// Configure cache size (mongod.conf)
+storage:
+  wiredTiger:
+    engineConfig:
+      cacheSizeGB: 4  // 50% of RAM minus 1GB recommended
+```
+
+---
+
+### 5. Materialized Views (Pre-computed Results)
+
+#### SQL Materialized View
+
+```sql
+-- Expensive query: Product statistics
+CREATE MATERIALIZED VIEW product_stats AS
+SELECT 
+  p.id,
+  p.name,
+  p.price,
+  COUNT(r.id) as review_count,
+  AVG(r.rating) as avg_rating,
+  SUM(oi.quantity) as total_sold
+FROM products p
+LEFT JOIN reviews r ON p.id = r.product_id
+LEFT JOIN order_items oi ON p.id = oi.product_id
+GROUP BY p.id, p.name, p.price;
+
+-- Now query is instant!
+SELECT * FROM product_stats WHERE avg_rating >= 4;
+-- Takes 10ms instead of 2000ms!
+
+-- Refresh periodically (cron job)
+REFRESH MATERIALIZED VIEW product_stats;
+
+-- Or concurrent refresh (doesn't lock readers)
+REFRESH MATERIALIZED VIEW CONCURRENTLY product_stats;
+```
+
+---
+
+### Cache Best Practices
+
+```javascript
+// 1. Set appropriate TTL based on data volatility
+const ttls = {
+  static: 86400,      // 24 hours (privacy policy)
+  semiStatic: 3600,   // 1 hour (product info)
+  dynamic: 300,       // 5 minutes (stock levels)
+  realtime: 60        // 1 minute (trending)
+};
+
+// 2. Use cache prefixes for organization
+const keys = {
+  user: (id) => `user:${id}`,
+  product: (id) => `product:${id}`,
+  cart: (userId) => `cart:${userId}`,
+  session: (sessionId) => `session:${sessionId}`
+};
+
+// 3. Monitor cache hit rate
+let hits = 0, misses = 0;
+
+async function getCached(key) {
+  const data = await redis.get(key);
+  
+  if (data) {
+    hits++;
+    return JSON.parse(data);
+  }
+  
+  misses++;
+  // Load from DB...
+}
+
+setInterval(() => {
+  const hitRate = hits / (hits + misses);
+  console.log(`Cache hit rate: ${(hitRate * 100).toFixed(2)}%`);
+  // Aim for > 90%
+}, 60000);
+
+// 4. Handle cache stampede (thundering herd)
+async function getProductSafe(id) {
+  const cacheKey = `product:${id}`;
+  const lockKey = `lock:product:${id}`;
+  
+  let product = await redis.get(cacheKey);
+  if (product) return JSON.parse(product);
+  
+  // Try to acquire lock
+  const lockAcquired = await redis.set(lockKey, '1', 'EX', 10, 'NX');
+  
+  if (lockAcquired) {
+    // This request refreshes cache
+    product = await db.query('SELECT * FROM products WHERE id = ?', [id]);
+    await redis.setex(cacheKey, 300, JSON.stringify(product));
+    await redis.del(lockKey);
+    return product;
+  } else {
+    // Other requests wait and retry
+    await sleep(50);
+    return getProductSafe(id);
+  }
+}
+
+// 5. Cache hot data (frequently accessed)
+// ✅ Product details, user profiles, trending lists
+// ❌ Admin logs, old data
+// Cache warming (preload popular data)
+async function warmCache() {
+  // Load top 100 products into cache
+  const products = await db.query('SELECT * FROM products ORDER BY sales DESC LIMIT 100');
+  
+  for (const product of products) {
+    await redis.setex(`product:${product.id}`, 3600, JSON.stringify(product));
+  }
+}
+
+// Run on startup
+warmCache();
+```
+
+---
