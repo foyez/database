@@ -8331,3 +8331,1743 @@ You can only have **2 of 3**:
 **AP** - Cassandra (available but eventually consistent)
 
 ---
+
+## Interview Questions & Answers
+
+### Q1: Explain the difference between SQL and NoSQL databases. When would you use each?
+
+**Answer:**
+
+"SQL and NoSQL databases differ fundamentally in structure, scaling, and use cases.
+
+**SQL (Relational):**
+- **Structure:** Tables with fixed schema, rows and columns
+- **Relationships:** Foreign keys, JOINs
+- **Consistency:** ACID transactions
+- **Scaling:** Vertical (scale up)
+- **Query Language:** SQL (standardized)
+
+**NoSQL (Non-Relational):**
+- **Structure:** Flexible - documents, key-value, graphs, column-family
+- **Relationships:** Embedded or referenced
+- **Consistency:** Eventual consistency (BASE)
+- **Scaling:** Horizontal (scale out)
+- **Query Language:** Varies by type
+
+**When to use SQL:**
+```
+✅ Banking systems (need ACID)
+✅ E-commerce orders and payments
+✅ Complex relationships (many JOINs)
+✅ Fixed, well-defined schema
+✅ Strong consistency required
+✅ Regulatory compliance
+
+Example: Order processing
+- PostgreSQL ensures payment and inventory update atomically
+- Can't have money deducted without creating order
+```
+
+**When to use NoSQL:**
+```
+✅ Flexible schema (product catalogs with varying attributes)
+✅ High write throughput (IoT sensors, logs)
+✅ Horizontal scaling needed (millions of users)
+✅ Eventual consistency acceptable
+✅ Hierarchical data (comments with nested replies)
+
+Example: Blog platform
+- MongoDB stores posts with embedded comments
+- No JOINs needed for displaying post with comments
+- Easy to add new fields without migration
+```
+
+**Real-world hybrid:**
+```javascript
+// E-commerce uses both
+PostgreSQL: Orders, payments, inventory (ACID critical)
+Redis: Shopping cart, sessions (speed)
+MongoDB: Product reviews, user activity logs (flexible)
+Elasticsearch: Product search (full-text)
+```
+
+**Decision criteria:**
+1. Data structure: Fixed → SQL, Evolving → NoSQL
+2. Transactions: Critical → SQL, Not critical → NoSQL
+3. Scale: < 1TB → SQL, > 1TB → NoSQL (usually)
+4. Relationships: Complex → SQL, Simple → NoSQL
+5. Team expertise: SQL familiar → SQL, else evaluate"
+
+---
+
+### Q2: What is database normalization? Explain with an example.
+
+**Answer:**
+
+"Normalization organizes data to reduce redundancy and improve integrity.
+
+**First Normal Form (1NF): Atomic values**
+```sql
+❌ Violates 1NF (comma-separated values)
+orders:
+┌────┬──────────┬─────────────────────────┐
+│ id │ customer │ items                   │
+├────┼──────────┼─────────────────────────┤
+│ 1  │ Alice    │ Laptop $1000, Mouse $20 │
+└────┴──────────┴─────────────────────────┘
+
+✅ Follows 1NF (atomic values)
+orders:
+┌────┬──────────┐
+│ id │ customer │
+├────┼──────────┤
+│ 1  │ Alice    │
+└────┴──────────┘
+
+order_items:
+┌────┬──────────┬────────┬───────┐
+│ id │ order_id │ item   │ price │
+├────┼──────────┼────────┼───────┤
+│ 1  │ 1        │ Laptop │ 1000  │
+│ 2  │ 1        │ Mouse  │ 20    │
+└────┴──────────┴────────┴───────┘
+```
+
+**Second Normal Form (2NF): Remove partial dependencies**
+```sql
+✅ 2NF: Separate customers
+customers:
+┌────┬───────┬────────────────────┐
+│ id │ name  │ email              │
+├────┼───────┼────────────────────┤
+│ 1  │ Alice │ alice@example.com  │
+└────┴───────┴────────────────────┘
+
+orders:
+┌────┬─────────────┬────────┐
+│ id │ customer_id │ total  │
+├────┼─────────────┼────────┤
+│ 1  │ 1           │ 1020   │
+└────┴─────────────┴────────┘
+```
+
+**Third Normal Form (3NF): Remove transitive dependencies**
+```sql
+✅ 3NF: Separate products
+products:
+┌────┬────────┬───────┐
+│ id │ name   │ price │
+├────┼────────┼───────┤
+│101 │ Laptop │ 1000  │
+│102 │ Mouse  │ 20    │
+└────┴────────┴───────┘
+
+order_items:
+┌────┬──────────┬────────────┬──────────┐
+│ id │ order_id │ product_id │ quantity │
+├────┼──────────┼────────────┼──────────┤
+│ 1  │ 1        │ 101        │ 1        │
+│ 2  │ 1        │ 102        │ 2        │
+└────┴──────────┴────────────┴──────────┘
+```
+
+**Benefits:**
+- No data redundancy
+- Easy updates (change price once in products table)
+- Data integrity maintained
+
+**Trade-off:**
+- More JOINs required
+- Can be slower for reads
+
+**When to denormalize:**
+- Read-heavy systems
+- Need performance
+- Data doesn't change often
+
+```sql
+-- For read-heavy systems
+-- Store price at time of order
+order_items:
+┌────┬──────────┬────────────┬──────────┬────────────────┐
+│ id │ order_id │ product_id │ quantity │ price_at_order │
+├────┼──────────┼────────────┼──────────┼────────────────┤
+│ 1  │ 1        │ 101        │ 1        │ 1000           │
+└────┴──────────┴────────────┴──────────┴────────────────┘
+
+-- Now if product price changes, order history stays correct
+```
+
+**Real example:**
+```
+E-commerce: Normalize user, product, order data
+Analytics: Denormalize for reporting (star schema)
+```"
+
+---
+
+### Q3: Explain database indexing. How do they work, What are the types and when to use them?
+
+**Answer:**
+
+"An index is a data structure that speeds up data retrieval at the cost of additional writes and storage.
+
+**Without Index:**
+```sql
+SELECT * FROM users WHERE email = 'foyez@example.com';
+-- Scans all 1M rows sequentially
+-- O(n) = 2000ms
+```
+
+**With Index:**
+```sql
+CREATE INDEX idx_users_email ON users(email);
+-- B-Tree structure: Binary search
+-- O(log n) = 50ms
+-- 40x faster!
+```
+
+**How it works:**
+```
+B-Tree Index on email:
+        [m@example.com]
+       /              \
+  [d@example.com]   [t@example.com]
+   /        \          /        \
+[a@...]  [f@...]   [p@...]   [z@...]
+          ↓
+    Row pointer to data
+```
+
+```
+Without index: O(n) - sequential scan of all rows
+With index: O(log n) - binary search
+
+1,000,000 rows:
+- Sequential: ~2000ms
+- Index: ~50ms
+- 40x faster!
+```
+
+**Types of indexes:**
+1. **B-Tree** (default): Range queries, sorting
+2. **Hash**: Exact matches only
+3. **GIN**: Arrays, JSON, full-text search
+4. **Partial**: Subset of data (WHERE clause)
+
+**1. B-Tree (default):**
+```sql
+CREATE INDEX idx_products_price ON products(price);
+
+-- Use cases:
+✅ Equality: WHERE price = 99.99
+✅ Range: WHERE price > 50
+✅ Sorting: ORDER BY price
+```
+
+**2. Hash:**
+```sql
+CREATE INDEX idx_users_email USING HASH (email);
+
+-- Use cases:
+✅ Exact match only: WHERE email = '...'
+❌ Can't do: WHERE email LIKE '%example.com'
+```
+
+**3. GIN (Generalized Inverted):**
+```sql
+-- For arrays, JSON, full-text search
+CREATE INDEX idx_products_tags USING GIN (tags);
+
+-- Use cases:
+✅ Arrays: WHERE tags @> ARRAY['electronics']
+✅ JSON: WHERE attributes @> '{"color": "red"}'
+✅ Full-text: WHERE search_vector @@ to_tsquery('laptop')
+```
+
+**4. Composite (multiple columns):**
+```sql
+CREATE INDEX idx_orders_user_status ON orders(user_id, status);
+
+✅ Uses index: WHERE user_id = 1 AND status = 'pending'
+✅ Uses index: WHERE user_id = 1 (leftmost prefix)
+❌ Doesn't use: WHERE status = 'pending' (skips first column)
+
+-- Column order matters: Most selective first
+```
+
+**5. Partial:**
+```sql
+CREATE INDEX idx_active_products ON products(name) 
+WHERE is_active = true;
+
+-- Benefits: Smaller index, faster for specific queries
+```
+
+**6. Covering:**
+```sql
+CREATE INDEX idx_users_email_covering ON users(email) 
+INCLUDE (name, city);
+
+-- All data in index (no table lookup needed)
+```
+
+**When to create:**
+```sql
+✅ Column in WHERE clause frequently
+✅ Column in JOIN conditions
+✅ Column in ORDER BY
+✅ High cardinality (many unique values)
+✅ Large table (1000+ rows)
+```
+
+**When NOT to create:**
+```sql
+❌ Small table (< 1000 rows)
+❌ Low cardinality (gender, status)
+❌ Write-heavy table
+❌ Column rarely queried
+```
+
+**MongoDB indexes:**
+```javascript
+// Single field
+db.users.createIndex({ email: 1 });
+
+// Compound
+db.posts.createIndex({ author_id: 1, status: 1 });
+
+// Text (full-text search)
+db.posts.createIndex({ title: "text", content: "text" });
+
+// Geospatial
+db.restaurants.createIndex({ location: "2dsphere" });
+
+// TTL (auto-delete)
+db.sessions.createIndex({ createdAt: 1 }, { expireAfterSeconds: 3600 });
+```
+
+**Trade-offs:**
+- ✅ Faster reads
+- ❌ Slower writes (must update index)
+- ❌ Storage space
+- ❌ Maintenance overhead"
+
+---
+
+### Q4: What's the difference between clustered and non-clustered indexes?
+
+**Answer:**
+"Clustered and non-clustered indexes differ in how data is physically stored.
+
+**Clustered Index:**
+- **Physical order**: Rows stored in index order on disk
+- **One per table**: Table can only be sorted one way
+- **Usually**: Primary key is clustered index
+- **Faster**: Range queries read sequential disk blocks
+
+```
+Clustered on user_id:
+Disk Storage (physically ordered):
+Row 1: id=1, name=Alice
+Row 2: id=2, name=Bob
+Row 3: id=3, name=Carol
+
+SELECT * FROM users WHERE id BETWEEN 2 AND 4;
+-- Reads consecutive disk blocks (fast!)
+```
+
+**Non-Clustered Index:**
+- **Logical order**: Separate structure pointing to data
+- **Multiple allowed**: Many per table
+- **Two-step lookup**: Index → Find location → Read row
+
+```
+Non-clustered on email:
+Index:               Actual Data (unordered):
+alice@... → Row 3    Row 1: dave@example.com
+bob@... → Row 1      Row 2: carol@example.com
+carol@... → Row 2    Row 3: alice@example.com
+dave@... → Row 1
+
+SELECT * FROM users WHERE email = 'alice@example.com';
+-- 1. Look up in index (finds Row 3)
+-- 2. Jump to Row 3 on disk
+```
+
+**Comparison:**
+
+| Feature | Clustered | Non-clustered |
+|---------|-----------|---------------|
+| Per table | 1 | Multiple |
+| Physical order | Yes | No |
+| Storage | Table itself | Separate |
+| Speed | Faster (direct) | Slower (two-step) |
+| Range queries | Very fast | Slower |
+| Space | None extra | Extra space |
+
+**Best practices:**
+- Clustered: Use for primary key or frequently ranged column
+- Non-clustered: Create for WHERE, JOIN, ORDER BY columns"
+
+---
+
+### Q5: What is the CAP theorem and how does it apply to databases?
+
+**Answer:**
+
+"CAP theorem states that in a distributed system, you can only guarantee 2 of 3:
+
+**C - Consistency:** All nodes see same data at same time
+**A - Availability:** System always responds (even if some nodes down)
+**P - Partition Tolerance:** System works despite network failures
+
+**Why can't have all 3:**
+```
+Scenario: Network partition splits database
+┌─────────┐  ╳  ┌─────────┐
+│ Node 1  │     │ Node 2  │
+└─────────┘     └─────────┘
+
+If you prioritize Consistency (C):
+- Must reject writes until partition heals
+- Sacrifices Availability (A)
+- Result: CP system
+
+If you prioritize Availability (A):
+- Both nodes accept writes
+- Data diverges temporarily
+- Sacrifices Consistency (C)
+- Result: AP system
+```
+
+**Database categorization:**
+
+**CA (Consistency + Availability):**
+```
+Traditional SQL on single server
+- PostgreSQL, MySQL (single instance)
+- Problem: Not partition-tolerant (if server down, system down)
+- Reality: Single-server isn't truly distributed, so P doesn't apply
+```
+
+**CP (Consistency + Partition Tolerance):**
+```
+MongoDB (with strong consistency)
+- Guarantees consistent reads
+- During partition: Reject writes to minority nodes
+- Trade-off: Some nodes unavailable during split
+
+HBase, Redis Sentinel
+- Strong consistency
+- May be unavailable during network issues
+```
+
+**AP (Availability + Partition Tolerance):**
+```
+Cassandra, DynamoDB, CouchDB
+- Always available for reads/writes
+- During partition: Accept writes on all nodes
+- Trade-off: Eventual consistency (data may be stale)
+- Resolves conflicts later
+
+Example:
+User A writes to Node 1: balance = $100
+User B reads from Node 2: balance = $50 (stale!)
+Eventually: Both nodes sync to $100
+```
+
+**Real-world decisions:**
+
+**Banking (CP):**
+```
+Use PostgreSQL or MongoDB with strong consistency
+- Can't show incorrect balance
+- Better to be unavailable than inconsistent
+- ACID transactions critical
+```
+
+**Social Media (AP):**
+```
+Use Cassandra or DynamoDB
+- Like count can be slightly off
+- Better to be available than consistent
+- User can always post/read
+
+Example: Facebook
+- Post count might be 99 or 101 temporarily
+- Eventually becomes 100
+- Nobody cares about exact count at every moment
+```
+
+**E-commerce hybrid:**
+```
+CP: Orders, payments (must be consistent)
+- PostgreSQL with synchronous replication
+- Won't process order if can't guarantee consistency
+
+AP: Product views, recommendations (can be stale)
+- Cassandra for metrics
+- View count being off by a few is fine
+```
+
+**Key insight:**
+```
+In distributed systems, network partitions WILL happen
+So you must choose between C and A
+Most modern systems: Choose per use case
+```"
+
+---
+
+### Q6: Explain database replication and when to use it
+
+**Answer:**
+"Database replication creates copies (replicas) of the database for read scaling and redundancy.
+
+**Structure:**
+```
+           Primary (Master)
+           Writes Only
+                │
+        ┌───────┼───────┐
+        │       │       │
+    Replica1 Replica2 Replica3
+     Reads    Reads    Reads
+```
+
+**How it works:**
+1. Application writes to primary
+2. Primary logs changes (WAL)
+3. Replicas fetch and apply changes
+4. Application reads from replicas
+
+**Types:**
+
+**1. Asynchronous (most common):**
+- Primary doesn't wait for replicas
+- Fastest writes
+- Possible replication lag (seconds)
+
+**2. Synchronous:**
+- Primary waits for at least one replica
+- Slower writes
+- No replication lag
+
+**Implementation:**
+```typescript
+// Write to primary
+await primaryDB.query('INSERT INTO users ...');
+
+// Read from replica (round-robin)
+const replica = selectReplica();
+const users = await replica.query('SELECT * FROM users');
+
+// Read from primary if consistency critical
+const balance = await primaryDB.query('SELECT balance FROM accounts WHERE id = ?');
+```
+
+**When to use:**
+- Read-heavy workloads (90% reads)
+- Need high availability (primary fails → promote replica)
+- Geographic distribution (lower latency)
+
+**Trade-offs:**
+- **Replication lag**: Recent writes might not appear on replica
+- **Complexity**: Application must route queries correctly
+- **Cost**: More servers
+
+**Example:** E-commerce
+- Product browsing: Replicas (eventual consistency OK)
+- Order placement: Primary (consistency critical)
+- Analytics: Dedicated replica (don't affect production)"
+
+---
+
+### Q7: Explain database transactions and isolation levels.
+
+**Answer:**
+
+"Transactions group operations that must succeed or fail together, with 4 isolation levels controlling how they interact.
+
+**ACID Transaction example:**
+```sql
+BEGIN TRANSACTION;
+  -- Atomicity: All or nothing
+  UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+  UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+  
+  -- If ANY error occurs, ROLLBACK everything
+COMMIT;
+```
+
+**Isolation Levels (strictest to loosest):**
+
+**1. Read Uncommitted:**
+```sql
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+Problem: Dirty reads
+Transaction A: UPDATE accounts SET balance = 200 WHERE id = 1;
+-- NOT committed yet
+Transaction B: SELECT balance FROM accounts WHERE id = 1;
+-- Returns: 200 (uncommitted!)
+Transaction A: ROLLBACK;
+-- B read data that never existed!
+
+Use: Almost never (too dangerous)
+```
+
+**2. Read Committed (DEFAULT):**
+```sql
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+Prevents: Dirty reads
+Still allows: Non-repeatable reads
+
+Example:
+BEGIN;
+  SELECT balance FROM accounts WHERE id = 1;  -- Returns: 100
+  -- Another transaction updates and commits: balance = 200
+  SELECT balance FROM accounts WHERE id = 1;  -- Returns: 200 (changed!)
+COMMIT;
+
+Use: Most applications (good balance)
+```
+
+**3. Repeatable Read:**
+```sql
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+Prevents: Dirty reads, non-repeatable reads
+Still allows: Phantom reads
+
+Example:
+BEGIN;
+  SELECT balance FROM accounts WHERE id = 1;  -- Returns: 100
+  -- Another transaction updates and commits: balance = 200
+  SELECT balance FROM accounts WHERE id = 1;  -- Still returns: 100 (consistent!)
+COMMIT;
+
+Use: Financial reports, data consistency critical
+```
+
+**4. Serializable (STRICTEST):**
+```sql
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+Prevents: All anomalies
+Acts as if: Transactions executed serially (one at a time)
+
+Example: Booking last seat
+Transaction A:
+BEGIN;
+  SELECT COUNT(*) FROM seats WHERE available = true;  -- Returns: 1
+  -- Locks query range
+  UPDATE seats SET available = false WHERE id = 1;
+COMMIT;
+
+Transaction B (concurrent):
+BEGIN;
+  SELECT COUNT(*) FROM seats WHERE available = true;  -- WAITS for A
+COMMIT;
+
+Use: Financial transactions, inventory management
+```
+
+**Comparison table:**
+
+| Level | Dirty Read | Non-repeatable | Phantom | Speed |
+|-------|-----------|----------------|---------|-------|
+| Read Uncommitted | ❌ | ❌ | ❌ | ⚡⚡⚡ |
+| Read Committed | ✅ | ❌ | ❌ | ⚡⚡ |
+| Repeatable Read | ✅ | ✅ | ❌ | ⚡ |
+| Serializable | ✅ | ✅ | ✅ | 🐌 |
+
+**Real-world example:**
+
+**E-commerce order:**
+```sql
+-- Use SERIALIZABLE for inventory
+BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+  
+  -- Check stock
+  SELECT stock FROM products WHERE id = 101 FOR UPDATE;
+  -- Locks row, prevents others from reading
+  
+  IF stock >= 1 THEN
+    -- Decrease stock
+    UPDATE products SET stock = stock - 1 WHERE id = 101;
+    
+    -- Create order
+    INSERT INTO orders (user_id, product_id) VALUES (1, 101);
+  ELSE
+    RAISE EXCEPTION 'Out of stock';
+  END IF;
+  
+COMMIT;
+```
+
+**MongoDB transactions:**
+```javascript
+const session = client.startSession();
+
+try {
+  await session.startTransaction({
+    readConcern: { level: 'snapshot' },       // Like Serializable
+    writeConcern: { w: 'majority' },
+    readPreference: 'primary'
+  });
+  
+  // Transfer money
+  await db.collection('accounts').updateOne(
+    { _id: account1Id },
+    { $inc: { balance: -100 } },
+    { session }
+  );
+  
+  await db.collection('accounts').updateOne(
+    { _id: account2Id },
+    { $inc: { balance: 100 } },
+    { session }
+  );
+  
+  await session.commitTransaction();
+} catch (error) {
+  await session.abortTransaction();
+  throw error;
+} finally {
+  session.endSession();
+}
+```
+
+**Key points:**
+- Higher isolation = More consistent but slower
+- Choose based on use case
+- Most apps: Read Committed
+- Financial: Serializable"
+
+---
+
+### Q8: How do you handle database migrations?
+
+**Answer:**
+"Database migrations are version-controlled schema changes.
+
+**Tools:** Flyway, Liquibase, Prisma Migrate, Rails migrations
+
+**Best practices:**
+
+**1. Version control**
+```sql
+-- V1__create_users_table.sql
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL
+);
+
+-- V2__add_email_to_users.sql
+ALTER TABLE users ADD COLUMN email VARCHAR(255) UNIQUE;
+
+-- V3__create_orders_table.sql
+CREATE TABLE orders (...);
+```
+
+**2. Never modify existing migrations**
+```
+❌ Edit V1__create_users_table.sql
+✅ Create V4__modify_users_table.sql
+```
+
+**3. Make migrations reversible**
+```sql
+-- Up
+ALTER TABLE users ADD COLUMN city VARCHAR(50);
+
+-- Down (for rollback)
+ALTER TABLE users DROP COLUMN city;
+```
+
+**4. Test migrations on copy of production**
+```bash
+# 1. Backup production
+pg_dump production > backup.sql
+
+# 2. Restore to staging
+pg_restore backup.sql staging
+
+# 3. Run migration on staging
+flyway migrate
+
+# 4. Test thoroughly
+# 5. If OK, run on production
+```
+
+**5. Handle large tables carefully**
+```sql
+-- ❌ BAD: Locks table for hours
+ALTER TABLE large_table ADD COLUMN new_column VARCHAR(100);
+
+-- ✅ GOOD: Use ALTER TABLE ... NOT VALID (PostgreSQL)
+ALTER TABLE large_table ADD COLUMN new_column VARCHAR(100) DEFAULT 'default' NOT VALID;
+-- Fast, doesn't validate existing rows
+
+-- Then validate in background
+ALTER TABLE large_table VALIDATE CONSTRAINT constraint_name;
+```
+
+**6. Backwards compatibility**
+```
+Deploy sequence:
+1. Add new column (default value)
+2. Deploy code using both old and new columns
+3. Migrate data from old to new
+4. Deploy code using only new column
+5. Drop old column
+
+This allows rollback at any point!
+```
+
+**7. Zero-downtime migrations**
+```sql
+-- Add nullable column first
+ALTER TABLE users ADD COLUMN city VARCHAR(50);
+
+-- Deploy code to populate it
+UPDATE users SET city = 'Unknown' WHERE city IS NULL;
+
+-- Later: Make it NOT NULL
+ALTER TABLE users ALTER COLUMN city SET NOT NULL;
+```
+
+**Real example:**
+```bash
+# Flyway
+flyway migrate  # Run all pending migrations
+flyway info     # Show migration status
+flyway validate # Check migration consistency
+flyway repair   # Fix checksum issues
+```"
+
+---
+
+### Q9: How would you design a database for a social media platform?
+
+**Answer:**
+
+"I'll walk through a complete design process:
+
+**Step 1: Requirements**
+```
+Features:
+- User profiles
+- Posts (text, images, videos)
+- Followers/Following
+- Likes and comments
+- Feed (posts from followed users)
+- Real-time notifications
+
+Scale:
+- 100M users
+- 1B posts
+- 10B interactions (likes, comments)
+- High read-to-write ratio (90:10)
+```
+
+**Step 2: Choose databases (hybrid approach)**
+```
+PostgreSQL: Users, authentication, financial data
+MongoDB: Posts, comments (flexible content)
+Redis: Feed cache, online users, trending
+Neo4j: Friend recommendations (graph relationships)
+Elasticsearch: Search users/posts
+```
+
+**Step 3: Schema design**
+
+**PostgreSQL - Users:**
+```sql
+CREATE TABLE users (
+  id BIGSERIAL PRIMARY KEY,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  full_name VARCHAR(100),
+  bio TEXT,
+  avatar_url VARCHAR(500),
+  follower_count INTEGER DEFAULT 0,
+  following_count INTEGER DEFAULT 0,
+  verified BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_email ON users(email);
+
+CREATE TABLE follows (
+  id BIGSERIAL PRIMARY KEY,
+  follower_id BIGINT REFERENCES users(id),
+  following_id BIGINT REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(follower_id, following_id)
+);
+
+CREATE INDEX idx_follows_follower ON follows(follower_id);
+CREATE INDEX idx_follows_following ON follows(following_id);
+```
+
+**MongoDB - Posts:**
+```javascript
+{
+  _id: ObjectId(),
+  author: {
+    id: ObjectId("user_id"),
+    username: "foyez",
+    avatar: "https://..."
+  },
+  type: "text",  // text, image, video
+  content: "Just learned about database design!",
+  media: [
+    {
+      type: "image",
+      url: "https://...",
+      thumbnail: "https://..."
+    }
+  ],
+  stats: {
+    likes: 1250,
+    comments: 48,
+    shares: 23,
+    views: 5420
+  },
+  hashtags: ["database", "learning"],
+  mentions: ["@alice", "@bob"],
+  visibility: "public",  // public, followers, private
+  createdAt: ISODate(),
+  updatedAt: ISODate()
+}
+
+// Indexes
+db.posts.createIndex({ "author.id": 1, createdAt: -1 });
+db.posts.createIndex({ hashtags: 1 });
+db.posts.createIndex({ createdAt: -1 });
+```
+
+**MongoDB - Comments:**
+```javascript
+{
+  _id: ObjectId(),
+  postId: ObjectId("post_id"),
+  author: {
+    id: ObjectId("user_id"),
+    username: "alice",
+    avatar: "https://..."
+  },
+  content: "Great post!",
+  parentId: null,  // For threaded comments
+  likesCount: 15,
+  createdAt: ISODate()
+}
+
+db.comments.createIndex({ postId: 1, createdAt: -1 });
+```
+
+**Redis - Feed cache:**
+```javascript
+// User's feed (list of post IDs)
+Key: `feed:user:${userId}`
+Value: [postId1, postId2, postId3, ...]
+TTL: 300 seconds
+
+// Trending posts
+Key: `trending:posts`
+Value: Sorted set with scores (engagement)
+TTL: 60 seconds
+
+// Online users
+Key: `online:users`
+Value: Set of user IDs
+```
+
+**Neo4j - Social graph:**
+```cypher
+// Nodes and relationships
+(user:User)-[:FOLLOWS]->(other:User)
+(user)-[:POSTED]->(post:Post)
+(user)-[:LIKES]->(post)
+
+// Friend suggestions
+MATCH (me:User {id: userId})-[:FOLLOWS]->()-[:FOLLOWS]->(suggestion)
+WHERE NOT (me)-[:FOLLOWS]->(suggestion) AND suggestion <> me
+RETURN suggestion.username, COUNT(*) as mutual_friends
+ORDER BY mutual_friends DESC
+LIMIT 10
+```
+
+**Step 4: Common queries**
+
+**Get user feed:**
+```javascript
+async function getUserFeed(userId, page = 1, limit = 20) {
+  // 1. Check cache
+  const cacheKey = `feed:${userId}:${page}`;
+  let feed = await redis.get(cacheKey);
+  
+  if (feed) {
+    return JSON.parse(feed);
+  }
+  
+  // 2. Get followed users from PostgreSQL
+  const following = await pg.query(
+    'SELECT following_id FROM follows WHERE follower_id = $1',
+    [userId]
+  );
+  
+  const followingIds = following.rows.map(r => r.following_id);
+  
+  // 3. Get posts from MongoDB
+  const posts = await mongo.collection('posts').find({
+    'author.id': { $in: followingIds }
+  })
+  .sort({ createdAt: -1 })
+  .skip((page - 1) * limit)
+  .limit(limit)
+  .toArray();
+  
+  // 4. Cache result
+  await redis.setex(cacheKey, 300, JSON.stringify(posts));
+  
+  return posts;
+}
+```
+
+**Step 5: Scaling strategy**
+
+**Read scaling:**
+```
+- PostgreSQL: 1 primary + 3 read replicas
+- MongoDB: Replica set (1 primary + 2 secondaries)
+- Redis: Cluster mode (3 master + 3 replica)
+```
+
+**Write scaling:**
+```
+- MongoDB: Shard by user_id
+- Shard 0: Users 0-33M
+- Shard 1: Users 33M-66M
+- Shard 2: Users 66M-100M
+```
+
+**Caching:**
+```
+- Feed cache (Redis): 5 minutes
+- User profile cache: 1 hour
+- Trending cache: 1 minute
+- CDN: Images, videos (permanent)
+```
+
+**Step 6: Performance optimizations**
+
+**Fan-out on write:**
+```javascript
+// When user posts, push to followers' feeds
+async function createPost(userId, postData) {
+  // 1. Save post to MongoDB
+  const post = await mongo.collection('posts').insertOne(postData);
+  
+  // 2. Get followers
+  const followers = await pg.query(
+    'SELECT follower_id FROM follows WHERE following_id = $1',
+    [userId]
+  );
+  
+  // 3. Fan-out to followers' feeds (async)
+  for (const follower of followers.rows) {
+    await redis.lpush(`feed:${follower.follower_id}`, post.insertedId);
+    await redis.ltrim(`feed:${follower.follower_id}`, 0, 999);  // Keep 1000 posts
+  }
+}
+```
+
+**This design handles:**
+- 100M users
+- High read throughput (90% reads → replicas)
+- Real-time feeds (Redis cache)
+- Complex relationships (Neo4j)
+- Flexible content (MongoDB)
+- Strong consistency where needed (PostgreSQL)"
+
+---
+
+### Q10: Explain sharding and when to use it.
+
+**Answer:**
+
+"Sharding splits data across multiple databases to scale writes horizontally.
+
+**How it works:**
+```
+Single Database:          Sharded:
+┌──────────────┐         ┌─────────┐ ┌─────────┐ ┌─────────┐
+│ All data     │    →    │ Shard 0 │ │ Shard 1 │ │ Shard 2 │
+│ 10M users    │         │ 0-3.3M  │ │3.3M-6.6M│ │6.6M-10M │
+└──────────────┘         └─────────┘ └─────────┘ └─────────┘
+  1 server                  3 servers
+  Write limit               3x write capacity
+```
+
+**Sharding strategies:**
+
+**1. Hash-based (modulo):**
+```javascript
+function getShard(userId) {
+  return userId % 3;  // 3 shards
+}
+
+const shards = [
+  new Pool({ host: 'shard0.db.example.com' }),
+  new Pool({ host: 'shard1.db.example.com' }),
+  new Pool({ host: 'shard2.db.example.com' })
+];
+
+async function createOrder(userId, orderData) {
+  const shardIndex = getShard(userId);
+  return await shards[shardIndex].query('INSERT INTO orders ...');
+}
+
+// ✅ Pros: Even distribution
+// ❌ Cons: Hard to add shards (changes hash)
+```
+
+**2. Range-based:**
+```javascript
+function getShard(userId) {
+  if (userId <= 3333333) return 0;
+  if (userId <= 6666666) return 1;
+  return 2;
+}
+
+// ✅ Pros: Easy to add shards
+// ❌ Cons: Uneven if new users concentrated
+```
+
+**3. Geographic:**
+```javascript
+function getShard(country) {
+  const regionMap = {
+    'BD': 'asia',
+    'US': 'americas',
+    'DE': 'europe'
+  };
+  return shards[regionMap[country]];
+}
+
+// ✅ Pros: Low latency for users
+// ❌ Cons: Uneven distribution by region
+```
+
+**4. Consistent hashing:**
+```javascript
+function consistentHash(userId) {
+  const hash = crypto.createHash('md5')
+    .update(userId.toString())
+    .digest('hex');
+  const hashInt = parseInt(hash.substring(0, 8), 16);
+  return hashInt % shards.length;
+}
+
+// ✅ Pros: Minimal data movement when adding shards
+```
+
+**MongoDB automatic sharding:**
+```javascript
+// Enable sharding
+sh.enableSharding("mydb");
+
+// Shard collection
+sh.shardCollection("mydb.orders", { user_id: 1 });
+
+// MongoDB handles everything automatically!
+// Application code doesn't change
+db.orders.insertOne({ user_id: 1000000, total: 150 });
+// Automatically routed to correct shard
+```
+
+**When to use sharding:**
+```
+✅ Write-heavy workloads (millions of writes/sec)
+✅ Single database hitting limits
+✅ Need horizontal scaling
+✅ Data naturally partitionable (by user, region)
+
+Examples:
+- Social media (shard by user_id)
+- Multi-tenant SaaS (shard by tenant_id)
+- Time-series data (shard by date)
+```
+
+**Challenges:**
+
+**1. Cross-shard queries:**
+```javascript
+// ❌ Can't JOIN across shards
+async function getTopUsers() {
+  // Must query each shard
+  const results = await Promise.all([
+    shards[0].query('SELECT * FROM users ORDER BY score DESC LIMIT 10'),
+    shards[1].query('SELECT * FROM users ORDER BY score DESC LIMIT 10'),
+    shards[2].query('SELECT * FROM users ORDER BY score DESC LIMIT 10')
+  ]);
+  
+  // Merge and sort in application
+  const allUsers = [...results[0], ...results[1], ...results[2]];
+  return allUsers.sort((a, b) => b.score - a.score).slice(0, 10);
+}
+```
+
+**2. Distributed transactions:**
+```javascript
+// Can't have ACID across shards (without 2PC)
+// User A on Shard 0, User B on Shard 1
+
+// ❌ Can't do atomically:
+await shards[0].query('UPDATE accounts SET balance = balance - 100 WHERE id = A');
+await shards[1].query('UPDATE accounts SET balance = balance + 100 WHERE id = B');
+
+// Solution: Saga pattern or avoid cross-shard transactions
+```
+
+**3. Rebalancing:**
+```javascript
+// Adding 4th shard changes distribution
+// userId % 3 !== userId % 4
+// Must migrate data
+
+// MongoDB handles this automatically
+sh.addShard("mongodb://new-shard:27017");
+// Balancer migrates data in background
+```
+
+**4. Hotspots:**
+```javascript
+// Celebrity user creates millions of posts
+// Their shard becomes overloaded
+
+// Solution: Compound shard key
+sh.shardCollection("mydb.posts", { author_id: 1, created_at: 1 });
+// Distributes across time ranges
+
+// Or: Further shard hot users
+if (isCelebrity(userId)) {
+  return getCelebrityShard(userId);
+}
+```
+
+**Best practices:**
+```
+1. Choose shard key carefully:
+   - High cardinality
+   - Even distribution
+   - Query pattern aligned
+
+2. Plan for rebalancing
+3. Monitor shard distribution
+4. Use consistent hashing
+5. Consider compound shard keys
+```"
+
+---
+
+### Q11: What is the difference between MongoDB's embedding and referencing?
+
+**Answer:**
+
+"Embedding and referencing are two ways to model relationships in MongoDB.
+
+**Embedding (Denormalization):**
+```javascript
+// All data in one document
+{
+  _id: ObjectId("user_id"),
+  name: "Foyez",
+  email: "foyez@example.com",
+  
+  // Embedded addresses
+  addresses: [
+    { type: "home", street: "123 Main St", city: "Cumilla" },
+    { type: "work", street: "456 Office Rd", city: "Dhaka" }
+  ],
+  
+  // Embedded orders
+  orders: [
+    {
+      id: ObjectId("order1"),
+      total: 150.00,
+      items: [
+        { product: "Laptop", price: 1000, qty: 1 }
+      ]
+    }
+  ]
+}
+
+// ✅ Single query gets everything
+db.users.findOne({ _id: userId });
+// No JOINs needed!
+
+// ✅ Atomic updates
+db.users.updateOne(
+  { _id: userId },
+  { $set: { "addresses.0.city": "Dhaka" } }
+);
+```
+
+**Referencing (Normalization):**
+```javascript
+// Users collection
+{
+  _id: ObjectId("user_id"),
+  name: "Foyez",
+  email: "foyez@example.com"
+}
+
+// Addresses collection (separate)
+{
+  _id: ObjectId("address1"),
+  userId: ObjectId("user_id"),  // Reference
+  type: "home",
+  street: "123 Main St",
+  city: "Cumilla"
+}
+
+// Orders collection (separate)
+{
+  _id: ObjectId("order1"),
+  userId: ObjectId("user_id"),  // Reference
+  total: 150.00
+}
+
+// Need $lookup to get everything
+db.users.aggregate([
+  { $match: { _id: userId } },
+  {
+    $lookup: {
+      from: "addresses",
+      localField: "_id",
+      foreignField: "userId",
+      as: "addresses"
+    }
+  },
+  {
+    $lookup: {
+      from: "orders",
+      localField: "_id",
+      foreignField: "userId",
+      as: "orders"
+    }
+  }
+]);
+
+// ✅ No data duplication
+// ✅ Easy to update (one place)
+```
+
+**Decision matrix:**
+
+| Factor | Embed | Reference |
+|--------|-------|-----------|
+| **Relationship** | 1-to-1, 1-to-few | 1-to-many, many-to-many |
+| **Data size** | Small (<100 items) | Large (1000+) |
+| **Access pattern** | Always together | Sometimes separate |
+| **Update frequency** | Rare | Frequent |
+| **Data duplication** | OK | Avoid |
+
+**When to embed:**
+```javascript
+// 1-to-1: User profile
+{
+  _id: ObjectId("user_id"),
+  name: "Foyez",
+  profile: {  // Always accessed with user
+    bio: "...",
+    avatar: "...",
+    location: { city: "Cumilla" }
+  }
+}
+
+// 1-to-few: Product with reviews (< 20 reviews)
+{
+  _id: ObjectId("product_id"),
+  name: "Laptop",
+  price: 1299,
+  reviews: [  // Few reviews, always shown with product
+    { rating: 5, comment: "Great!", user: "Alice" },
+    { rating: 4, comment: "Good", user: "Bob" }
+  ]
+}
+
+// Hierarchical: Comment threads
+{
+  _id: ObjectId("comment_id"),
+  text: "Great post!",
+  replies: [  // Nested comments
+    {
+      text: "Thanks!",
+      replies: [
+        { text: "Welcome!" }
+      ]
+    }
+  ]
+}
+```
+
+**When to reference:**
+```javascript
+// 1-to-many: User with thousands of orders
+// users collection
+{ _id: ObjectId("user_id"), name: "Foyez" }
+
+// orders collection (separate)
+{ _id: ObjectId("order1"), userId: ObjectId("user_id"), total: 150 }
+{ _id: ObjectId("order2"), userId: ObjectId("user_id"), total: 200 }
+// Can't embed thousands of orders!
+
+// Many-to-many: Students and courses
+// students collection
+{ _id: ObjectId("student1"), name: "Alice", courseIds: [ObjectId("c1"), ObjectId("c2")] }
+
+// courses collection
+{ _id: ObjectId("c1"), name: "Math", studentIds: [ObjectId("student1"), ObjectId("student2")] }
+```
+
+**Hybrid approach (best practice):**
+```javascript
+// Blog posts with author info
+{
+  _id: ObjectId("post_id"),
+  title: "MongoDB Guide",
+  content: "...",
+  
+  // Reference for queries
+  authorId: ObjectId("user_id"),
+  
+  // Embed for display (cached)
+  author: {
+    username: "foyez",
+    avatar: "https://..."
+  },
+  
+  // Reference comments (too many to embed)
+  commentsCount: 150
+}
+
+// Comments in separate collection
+db.comments.find({ postId: ObjectId("post_id") });
+
+// ✅ Fast display (author embedded)
+// ✅ Can query by authorId
+// ✅ Comments separate (scalable)
+
+// Trade-off: If author changes username, must update all posts
+// But username changes are rare, so acceptable
+```
+
+**Real-world example - E-commerce:**
+```javascript
+// Order (snapshot of data at purchase time)
+{
+  _id: ObjectId("order_id"),
+  userId: ObjectId("user_id"),
+  
+  // Embed items (snapshot)
+  items: [
+    {
+      productId: ObjectId("product1"),
+      name: "Laptop",  // Embed name and price
+      price: 1000,     // Price at time of order
+      qty: 1
+    }
+  ],
+  
+  total: 1000,
+  createdAt: new Date()
+}
+
+// Why embed? Order is historical record
+// Even if product price changes to $1200, order stays $1000
+```
+
+**Key principle:**
+```
+Embed: Data accessed together
+Reference: Data accessed independently or large datasets
+```"
+
+---
+
+### Q12: How do you optimize a slow database query?
+
+**Answer:**
+
+"I follow a systematic approach:
+
+**Step 1: Identify the problem with EXPLAIN**
+```sql
+-- PostgreSQL
+EXPLAIN ANALYZE
+SELECT * FROM orders 
+WHERE user_id = 1 AND status = 'pending';
+
+-- Look for:
+❌ Seq Scan (sequential scan - bad!)
+✅ Index Scan (using index - good!)
+
+-- Before optimization:
+Seq Scan on orders  (actual time=0.031..2.456 rows=5)
+  Filter: ((user_id = 1) AND (status = 'pending'))
+Execution Time: 2.489 ms
+
+-- After adding index:
+Index Scan using idx_orders_user_status
+  (actual time=0.021..0.034 rows=5)
+Execution Time: 0.056 ms
+
+-- 44x faster!
+```
+
+**Step 2: Create appropriate indexes**
+```sql
+-- Single column index
+CREATE INDEX idx_orders_user_id ON orders(user_id);
+
+-- Composite index (better for multiple conditions)
+CREATE INDEX idx_orders_user_status ON orders(user_id, status);
+
+-- Covering index (includes all needed columns)
+CREATE INDEX idx_orders_covering ON orders(user_id, status) 
+INCLUDE (total, created_at);
+```
+
+**Step 3: Rewrite query**
+
+**❌ Before:**
+```sql
+SELECT 
+  u.name,
+  (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) as order_count
+FROM users u;
+-- Correlated subquery runs for EACH user (N queries)
+```
+
+**✅ After:**
+```sql
+SELECT 
+  u.name,
+  COUNT(o.id) as order_count
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+GROUP BY u.id, u.name;
+-- Single query with JOIN
+```
+
+**Step 4: SELECT only needed columns**
+```sql
+-- ❌ Bad
+SELECT * FROM products;  -- Returns all 20 columns
+
+-- ✅ Good
+SELECT id, name, price FROM products;  -- Only needed columns
+```
+
+**Step 5: Use LIMIT for pagination**
+```sql
+-- ❌ Bad
+SELECT * FROM products ORDER BY created_at DESC;
+-- Returns all 100,000 products
+
+-- ✅ Good
+SELECT * FROM products 
+ORDER BY created_at DESC 
+LIMIT 20 OFFSET 0;
+
+-- ✅ Better (keyset pagination for large offsets)
+SELECT * FROM products 
+WHERE created_at < '2024-01-15 10:30:00'
+ORDER BY created_at DESC 
+LIMIT 20;
+```
+
+**Step 6: Avoid functions on indexed columns**
+```sql
+-- ❌ Can't use index
+SELECT * FROM users WHERE LOWER(email) = 'foyez@example.com';
+
+-- ✅ Use index
+SELECT * FROM users WHERE email = 'foyez@example.com';
+
+-- ✅ Or create functional index
+CREATE INDEX idx_users_email_lower ON users(LOWER(email));
+```
+
+**Step 7: Use EXISTS instead of IN**
+```sql
+-- ❌ Slow with large subquery
+SELECT * FROM products
+WHERE id IN (SELECT product_id FROM order_items);
+
+-- ✅ Fast (stops at first match)
+SELECT * FROM products p
+WHERE EXISTS (
+  SELECT 1 FROM order_items oi 
+  WHERE oi.product_id = p.id
+);
+```
+
+**Step 8: Cache results**
+```javascript
+async function getProductCached(id) {
+  // 1. Check cache
+  const cached = await redis.get(`product:${id}`);
+  if (cached) return JSON.parse(cached);
+  
+  // 2. Query database
+  const product = await db.query('SELECT * FROM products WHERE id = $1', [id]);
+  
+  // 3. Cache for 5 minutes
+  await redis.setex(`product:${id}`, 300, JSON.stringify(product));
+  
+  return product;
+}
+```
+
+**MongoDB optimization:**
+```javascript
+// 1. Use explain()
+db.posts.find({ status: "published" }).explain("executionStats");
+
+// Look for:
+// - "stage": "IXSCAN" (good - using index)
+// - "stage": "COLLSCAN" (bad - collection scan)
+
+// 2. Create index
+db.posts.createIndex({ status: 1, publishedAt: -1 });
+
+// 3. Project only needed fields
+db.posts.find(
+  { status: "published" },
+  { title: 1, slug: 1, _id: 0 }
+);
+
+// 4. Use aggregation efficiently
+db.posts.aggregate([
+  { $match: { status: "published" } },  // FIRST - uses index
+  { $sort: { publishedAt: -1 } },
+  { $limit: 10 }
+  // Expensive operations after filtering
+]);
+```
+
+**Real example:**
+
+**Before (5000ms):**
+```sql
+SELECT 
+  p.*,
+  (SELECT AVG(rating) FROM reviews WHERE product_id = p.id) as avg_rating,
+  (SELECT COUNT(*) FROM reviews WHERE product_id = p.id) as review_count
+FROM products p
+WHERE p.category_id = 1
+ORDER BY (SELECT AVG(rating) FROM reviews WHERE product_id = p.id) DESC;
+
+-- Problems:
+-- 1. Correlated subqueries (N queries)
+-- 2. No indexes
+-- 3. Sorting by subquery
+```
+
+**After (50ms):**
+```sql
+-- Step 1: Create indexes
+CREATE INDEX idx_products_category ON products(category_id);
+CREATE INDEX idx_reviews_product ON reviews(product_id);
+
+-- Step 2: Rewrite with JOIN
+SELECT 
+  p.*,
+  COALESCE(AVG(r.rating), 0) as avg_rating,
+  COUNT(r.id) as review_count
+FROM products p
+LEFT JOIN reviews r ON p.id = r.product_id
+WHERE p.category_id = 1
+GROUP BY p.id
+ORDER BY AVG(r.rating) DESC NULLS LAST;
+
+-- Result: 100x faster!
+```
+
+**Monitoring:**
+```sql
+-- Check slow queries (PostgreSQL)
+SELECT 
+  query,
+  calls,
+  mean_exec_time,
+  total_exec_time
+FROM pg_stat_statements
+WHERE mean_exec_time > 100
+ORDER BY mean_exec_time DESC;
+```"
+
+---
+
+## Quick Reference
+
+```
+```
+ACID: "A Car Is Durable"
+- Atomicity: All or nothing
+- Consistency: Rules followed
+- Isolation: No interference
+- Durability: Survives crashes
+
+SQL vs NoSQL:
+- SQL: ACID, relationships, complex queries
+- NoSQL: Scale, flexibility, speed
+
+Database Choice:
+- Transactions? → PostgreSQL
+- Flexible schema? → MongoDB
+- Caching? → Redis
+- Graph? → Neo4j
+- Time-series? → Cassandra/TimescaleDB
+```
+
+```
+Security:
+- Principle of least privilege
+- Parameterized queries (prevent SQL injection)
+- Hash passwords (bcrypt)
+- Encrypt sensitive data
+- Use SSL/TLS
+- Environment variables for secrets
+
+Backup:
+- Automate daily backups
+- Test restores monthly
+- Store off-site (S3, etc.)
+- Keep multiple versions
+- Point-in-time recovery (WAL)
+
+Monitoring:
+- Query performance (pg_stat_statements)
+- Connection pool health
+- Cache hit ratio (> 99%)
+- Replication lag
+- Disk usage
+
+Testing:
+- Unit tests (mock database)
+- Integration tests (test database)
+- Load tests (pgbench)
+```
+
+---
