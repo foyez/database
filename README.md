@@ -94,6 +94,9 @@ Databases
 #### 1. **Database**
 The top-level container that holds all related data.
 
+<details>
+<summary><strong>View contents</strong></summary>
+
 **SQL:**
 ```sql
 -- Create database
@@ -119,11 +122,16 @@ SELECT 0  # Use database 0
 SELECT 1  # Use database 1
 ```
 
+</details>
+
 ---
 
 #### 2. **Schema**
 
 **Definition:** The structure, organization, and constraints that define how data is stored.
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 **SQL Schema (Fixed/Rigid):**
 ```sql
@@ -186,6 +194,8 @@ db.createCollection("users", {
 });
 ```
 
+</details>
+
 ---
 
 ### SQL Terminology
@@ -204,6 +214,9 @@ db.createCollection("users", {
 | **Constraint** | Rules for data integrity | `NOT NULL`, `UNIQUE`, `CHECK`, `FOREIGN KEY` |
 | **Transaction** | Group of operations (all or nothing) | `BEGIN; UPDATE...; UPDATE...; COMMIT;` |
 | **Query** | Request to retrieve or modify data | `SELECT * FROM users WHERE age > 18` |
+
+<details>
+<summary><strong>View example</strong></summary>
 
 **SQL Example:**
 ```sql
@@ -231,6 +244,8 @@ VALUES ('Foyez', 'foyez@example.com', 25);
 SELECT name, email FROM users WHERE age > 18;
 ```
 
+</details>
+
 ---
 
 ### NoSQL Terminology
@@ -248,6 +263,9 @@ SELECT name, email FROM users WHERE age > 18;
 | **Reference** | Foreign Key | ObjectId pointing to another document | `userId: ObjectId("...")` |
 | **Index** | Index | Data structure for faster lookups | `db.users.createIndex({email: 1})` |
 | **Aggregation Pipeline** | Complex Query/JOIN | Multi-stage data processing | `db.collection.aggregate([...])` |
+
+<details>
+<summary><strong>View example</strong></summary>
 
 **MongoDB Example:**
 ```javascript
@@ -291,6 +309,8 @@ db.users.insertOne({
 });
 ```
 
+</details>
+
 ---
 
 #### Redis (Key-Value) Terminology
@@ -306,6 +326,9 @@ db.users.insertOne({
 | **Set** | Set | Unordered unique values | `SADD myset "value1" "value2"` |
 | **Sorted Set** | Sorted Set | Set with scores | `ZADD leaderboard 100 "player1"` |
 | **TTL** | Expiration | Time-to-live (auto-delete) | `EXPIRE key 300` (5 minutes) |
+
+<details>
+<summary><strong>View example</strong></summary>
 
 **Redis Example:**
 ```bash
@@ -345,6 +368,8 @@ SET session:abc123 "user_id:1" EX 3600  # Expires in 1 hour
 TTL session:abc123  # Check remaining time
 ```
 
+</details>
+
 ---
 
 #### Cassandra (Column-Family) Terminology
@@ -371,6 +396,9 @@ TTL session:abc123  # Check remaining time
 | **Label** | Table | Category/type of node | `:Person`, `:Product`, `:Post` |
 | **Cypher** | SQL | Query language | `MATCH (u:User) WHERE u.age > 18 RETURN u` |
 
+<details>
+<summary><strong>View example</strong></summary>
+
 **Neo4j Example:**
 ```cypher
 // Node (like SQL row)
@@ -386,6 +414,8 @@ MATCH (user:Person)-[:FOLLOWS]->(friend:Person)
 WHERE user.name = "Foyez"
 RETURN friend.name
 ```
+
+</details>
 
 ---
 
@@ -447,6 +477,15 @@ orders.user_id → users.id
 
 ### Popular SQL Databases
 
+1. PostgreSQL
+2. MySQL
+3. SQLite
+4. Oracle Database
+5. Microsoft SQL Server
+
+<details>
+<summary><strong>View contents</strong></summary>
+
 #### 1. PostgreSQL
 - **Type:** Open-source, object-relational
 - **Best for:** Complex applications, data integrity
@@ -476,6 +515,8 @@ orders.user_id → users.id
 - **Best for:** .NET applications, Windows ecosystem
 - **Features:** Integration with Microsoft tools
 - **Use cases:** Enterprise applications, business intelligence
+
+</details>
 
 ### When to Use SQL Databases
 
@@ -525,6 +566,9 @@ The term doesn't mean "No SQL" but rather "Not Only SQL" - many NoSQL databases 
 **Definition:** Store data as JSON-like documents. Each document can have different structure.
 
 **Popular:** MongoDB, CouchDB, Firebase Firestore
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 **Structure:**
 ```javascript
@@ -594,6 +638,8 @@ The term doesn't mean "No SQL" but rather "Not Only SQL" - many NoSQL databases 
 // No fixed schema needed!
 ```
 
+</details>
+
 ---
 
 ### 2. Key-Value Databases
@@ -601,6 +647,9 @@ The term doesn't mean "No SQL" but rather "Not Only SQL" - many NoSQL databases 
 **Definition:** Simplest NoSQL model. Each item stored as key-value pair. Think of it as a giant hash map.
 
 **Popular:** Redis, Memcached, DynamoDB, Riak
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 **Structure:**
 ```bash
@@ -745,6 +794,8 @@ const top10 = await redis.zrange('game:leaderboard', 0, 9, 'WITHSCORES');
 const rank = await redis.zrevrank('game:leaderboard', userId);
 ```
 
+</details>
+
 ---
 
 ### 3. Column-Family Databases
@@ -752,6 +803,9 @@ const rank = await redis.zrevrank('game:leaderboard', userId);
 **Definition:** Store data in columns rather than rows. Optimized for queries on large datasets.
 
 **Popular:** Cassandra, HBase, ScyllaDB
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 **Structure:**
 ```
@@ -816,6 +870,8 @@ AND timestamp >= '2024-12-01'
 AND timestamp < '2024-12-31';
 ```
 
+</details>
+
 ---
 
 ### 4. Graph Databases
@@ -823,6 +879,9 @@ AND timestamp < '2024-12-31';
 **Definition:** Store data as nodes (entities) and edges (relationships). Optimized for traversing connections.
 
 **Popular:** Neo4j, ArangoDB, Amazon Neptune
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 **Structure:**
 ```
@@ -889,6 +948,8 @@ ORDER BY friend_purchases DESC
 LIMIT 10
 ```
 
+</details>
+
 ---
 
 ### 5. Time-Series Databases
@@ -896,6 +957,9 @@ LIMIT 10
 **Definition:** Optimized for time-stamped data. Handles massive volumes of sequential data.
 
 **Popular:** InfluxDB, TimescaleDB (PostgreSQL extension), Prometheus
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 **Structure:**
 ```
@@ -945,6 +1009,8 @@ FROM api_response_time
 WHERE time > now() - 1h 
 GROUP BY time(1m)
 ```
+
+</details>
 
 ---
 
@@ -1066,11 +1132,11 @@ JOIN users u ON o.user_id = u.id
 
 #### When to Use SQL
 
-✅ **Banking & Finance** - ACID transactions critical
-✅ **E-commerce** - Complex relationships (users, orders, products)
-✅ **ERP/CRM Systems** - Data integrity, complex reporting
-✅ **Healthcare** - Regulatory compliance, data consistency
-✅ **Any system** where data loss is unacceptable
+- **Banking & Finance** - ACID transactions critical
+- **E-commerce** - Complex relationships (users, orders, products)
+- **ERP/CRM Systems** - Data integrity, complex reporting
+- **Healthcare** - Regulatory compliance, data consistency
+- **Any system** where data loss is unacceptable
 
 ---
 
@@ -1210,31 +1276,31 @@ Most modern applications use **BOTH** SQL and NoSQL!
 
 ```
 ┌─────────────────── Application ───────────────────┐
-│                                                    │
-│  ┌──────────────┐  ┌──────────────┐  ┌─────────┐ │
-│  │ PostgreSQL   │  │    Redis     │  │ MongoDB │ │
-│  │              │  │              │  │         │ │
-│  │ • Users      │  │ • Sessions   │  │ • Logs  │ │
-│  │ • Orders     │  │ • Cart       │  │ • Events│ │
+│                                                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────-─┐ │
+│  │ PostgreSQL   │  │    Redis     │  │ MongoDB  │ │
+│  │              │  │              │  │          │ │
+│  │ • Users      │  │ • Sessions   │  │ • Logs   │ │
+│  │ • Orders     │  │ • Cart       │  │ • Events │ │
 │  │ • Payments   │  │ • Cache      │  │ • Metrics│ │
-│  │              │  │ • Trending   │  │         │ │
-│  │              │  │              │  │         │ │
-│  │ ACID         │  │ Speed        │  │ Flexible│ │
-│  │ Consistent   │  │ Temporary    │  │ Scale   │ │
-│  └──────────────┘  └──────────────┘  └─────────┘ │
-│                                                    │
+│  │              │  │ • Trending   │  │          │ │
+│  │              │  │              │  │          │ │
+│  │ ACID         │  │ Speed        │  │ Flexible │ │
+│  │ Consistent   │  │ Temporary    │  │ Scale    │ │
+│  └──────────────┘  └──────────────┘  └─────────-┘ │
+│                                                   │
 │  ┌──────────────────────────────────────────────┐ │
 │  │          Elasticsearch                       │ │
 │  │          • Product search                    │ │
 │  │          • Full-text search                  │ │
 │  └──────────────────────────────────────────────┘ │
-│                                                    │
+│                                                   │
 │  ┌──────────────────────────────────────────────┐ │
 │  │          Neo4j (Optional)                    │ │
 │  │          • Friend recommendations            │ │
 │  │          • Social graph                      │ │
 │  └──────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────┘
 ```
 
 **Why Hybrid?**
@@ -1273,6 +1339,9 @@ H - Huge scale (millions of users)
 ## Step-by-Step: E-Commerce (PostgreSQL)
 
 ### Project: Complete E-Commerce Platform with SQL
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 Let's build a production-ready e-commerce database from scratch using PostgreSQL.
 
@@ -1385,85 +1454,42 @@ Let's build a production-ready e-commerce database from scratch using PostgreSQL
 #### Define Relationships
 
 ```
-┌──────────────┐
-│    USERS     │
-├──────────────┤
-│ id (PK)      │──────┐
-│ name         │      │
-│ email        │      │ 1:N
-│ password_hash│      │ One user → Many orders
-│ address      │      │
-│ created_at   │      │
-└──────────────┘      │
-                      │
-                      ▼
-           ┌──────────────────┐
-           │     ORDERS       │
-           ├──────────────────┤
-           │ id (PK)          │
-           │ user_id (FK)     │◄────┐
-           │ total            │     │
-           │ status           │     │ 1:N
-           │ payment_status   │     │ One order → Many items
-           │ shipping_address │     │
-           │ created_at       │     │
-           └──────────────────┘     │
-                                    │
-                                    ▼
-                         ┌──────────────────┐
-                         │  ORDER_ITEMS     │
-                         │  (Junction)      │
-                         ├──────────────────┤
-                         │ id (PK)          │
-                         │ order_id (FK)    │
-                         │ product_id (FK)  │◄────┐
-                         │ quantity         │     │
-                         │ price_at_order   │     │
-                         └──────────────────┘     │
-                                                  │
-┌──────────────┐                                 │
-│  CATEGORIES  │                                 │
-├──────────────┤                                 │
-│ id (PK)      │──────┐                         │
-│ name         │      │                         │
-│ description  │      │ 1:N                     │
-└──────────────┘      │ One category →          │
-                      │ Many products           │
-                      ▼                         │
-           ┌──────────────────┐                │
-           │    PRODUCTS      │────────────────┘
-           ├──────────────────┤
-           │ id (PK)          │
-           │ name             │         1:N
-           │ description      │         One product →
-           │ price            │         Many reviews
-           │ stock            │              │
-           │ category_id (FK) │              │
-           │ attributes (JSONB)│             │
-           │ created_at       │              │
-           └──────────────────┘              │
-                                             ▼
-                                  ┌──────────────────┐
-                                  │     REVIEWS      │
-                                  ├──────────────────┤
-                                  │ id (PK)          │
-                                  │ product_id (FK)  │
-                                  │ user_id (FK)     │
-                                  │ rating (1-5)     │
-                                  │ comment          │
-                                  │ created_at       │
-                                  └──────────────────┘
-
-
-┌─────────────────┐
-│   CART_ITEMS    │
-├─────────────────┤
-│ id (PK)         │
-│ user_id (FK)    │
-│ product_id (FK) │
-│ quantity        │
-│ created_at      │
-└─────────────────┘
+┌──────────────┐                  ┌──────────────────┐             ┌──────────────────┐
+│    USERS     │                  │     ORDERS       │             │  ORDER_ITEMS     │
+├──────────────┤        1:N       ├──────────────────┤    1:N      │  (Junction)      │
+│ id (PK)      │──────────────--► │ id (PK)          │-----------► ├──────────────────┤
+│ name         │                  │ user_id (FK)     │             │ id (PK)          │
+│ email        │                  │ total            │             │ order_id (FK)    │
+│ password_hash│                  | status           |             │ product_id (FK)  │
+│ address      │                  | payment_status   |             │ quantity         │
+│ created_at   │                  │ shipping_address |             │ price_at_order   │
+└──────────────┘                  | created_at       |             └──────────────────┘
+        |                         └──────────────────┘                     ▲
+        |                                                                  |
+        | 1:N                                                1:N           |
+        |                                ┌---------------------------------┘
+        ▼                                |
+┌─────────────────┐             ┌──────────────────┐                ┌──────────────────┐
+│   CART_ITEMS    │             │    PRODUCTS      │                │     REVIEWS      │
+├─────────────────┤             ├──────────────────┤                ├──────────────────┤
+│ id (PK)         │       N:1   │ id (PK)          │     1:N        │ id (PK)          │
+│ user_id (FK)    | ◄─────────--│ name             │─────────-----► │ product_id (FK)  │
+│ product_id (FK) |             │ description      │                │ user_id (FK)     │
+│ quantity        │             │ price            │                │ rating           │
+│ created_at      │             │ stock            │                │ comment          │
+└─────────────────┘             │ category_id (FK) │                │ created_at       │
+                                │ attributes       │                └──────────────────┘
+                                │ created_at       │
+                                └──────────────────┘
+                                        ▲
+                                        | 1:N
+                                ┌──────────────┐
+                                │  CATEGORIES  │
+                                ├──────────────┤
+                                │ id (PK)      │
+                                │ name         │
+                                │ description  │
+                                └──────────────┘
 ```
 
 #### Relationship Types
@@ -1483,11 +1509,12 @@ Let's build a production-ready e-commerce database from scratch using PostgreSQL
 #### Cardinality Notation
 
 ```
-Crow's Foot Notation:
-│        = One (exactly 1)
-│<       = Many (0 or more)
-│|       = One (exactly 1, mandatory)
-○|       = Zero or one (optional)
+SYMBOLS
+───────
+|       = ONE (mandatory, exactly 1)
+<       = MANY (zero or more)
+o|      = ZERO OR ONE (optional)
+|<      = ONE-TO-MANY
 
 Example:
 User ──│< Orders
@@ -2440,11 +2467,16 @@ GROUP BY DATE(created_at)
 ORDER BY date DESC;
 ```
 
+</details>
+
 ---
 
 ## Step-by-Step: Blog Platform (MongoDB)
 
 ### Project: Complete Blog Platform with MongoDB
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 Let's build a flexible blog platform using MongoDB's document-oriented approach.
 
@@ -3221,11 +3253,16 @@ const leaderboard = await db.posts.aggregate([
 ]).toArray();
 ```
 
+</details>
+
 ---
 
 ## Step-by-Step: Real-Time App (Redis)
 
 ### Project: Real-Time Gaming Leaderboard & Chat
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 Let's build a real-time gaming application using Redis for speed.
 
@@ -3660,6 +3697,8 @@ async function performanceTest() {
 }
 ```
 
+</details>
+
 ---
 
 ## ACID Properties
@@ -3689,6 +3728,9 @@ async function performanceTest() {
 - Either ALL steps complete, or NONE
 - If power fails, transaction rolls back
 - Your $500 stays intact
+
+<details>
+<summary><strong>View example</strong></summary>
 
 #### SQL Example
 
@@ -3771,6 +3813,8 @@ BEGIN TRANSACTION;
 COMMIT;
 ```
 
+</details><br>
+
 **Key Points:**
 - Transaction = smallest indivisible unit
 - Either complete success or complete failure
@@ -3784,6 +3828,9 @@ COMMIT;
 
 #### Real-Life Analogy
 **Chess Rules**: A pawn can't suddenly move like a queen. The game enforces rules. Similarly, database enforces: "balance can't be negative" or "email must be unique."
+
+<details>
+<summary><strong>View example</strong></summary>
 
 #### SQL Example
 
@@ -3884,6 +3931,8 @@ UPDATE orders SET total = 150.00 WHERE id = 1;
 -- ERROR: Order total (150) does not match items total (100)
 ```
 
+</details><br>
+
 **Key Points:**
 - Database moves from one valid state to another
 - Constraints enforce business rules
@@ -3897,6 +3946,9 @@ UPDATE orders SET total = 150.00 WHERE id = 1;
 
 #### Real-Life Analogy
 **Movie Theater Seats**: Two people try to book seat A5 simultaneously. Only one succeeds. They don't see each other's half-booked seats or cause double-booking.
+
+<details>
+<summary><strong>View example</strong></summary>
 
 #### The Problem: Race Conditions
 
@@ -4038,6 +4090,8 @@ SELECT balance FROM accounts WHERE id = 1;
 -- Returns: 200 (changed!)
 ```
 
+</details><br>
+
 **Key Points:**
 - Higher isolation = More consistent but slower
 - Use SERIALIZABLE for financial transactions
@@ -4051,6 +4105,9 @@ SELECT balance FROM accounts WHERE id = 1;
 
 #### Real-Life Analogy
 **Signing a Contract**: Once you sign with permanent marker, it can't be erased, even if the building burns down (because there are copies in safe locations).
+
+<details>
+<summary><strong>View example</strong></summary>
 
 #### SQL Example
 
@@ -4119,6 +4176,8 @@ synchronous_commit = on  -- Wait for WAL before returning
 
 -- Without these, committed transactions might be lost!
 ```
+
+</details><br>
 
 **Key Points:**
 - Committed data survives power failure, crash, or disaster
@@ -4407,6 +4466,9 @@ db.users.find({ email: "foyez@example.com" });
 
 **Best for:** Equality, range queries, sorting
 
+<details>
+<summary><strong>View contents</strong></summary>
+
 ```sql
 -- Create B-Tree index
 CREATE INDEX idx_products_price ON products(price);
@@ -4435,11 +4497,16 @@ SELECT MIN(price), MAX(price) FROM products;         -- Min/Max
 - Default index type
 - Self-balancing
 
+</details>
+
 ---
 
 #### 2. Hash Index
 
 **Best for:** Exact equality matches only
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Create hash index (PostgreSQL)
@@ -4461,11 +4528,16 @@ SELECT * FROM users WHERE email > 'a@example.com';
 - Doesn't support sorting
 - Faster than B-Tree for equality, but limited
 
+</details>
+
 ---
 
 #### 3. GIN (Generalized Inverted Index)
 
 **Best for:** Full-text search, arrays, JSON
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- For array columns
@@ -4512,11 +4584,16 @@ WHERE search_vector @@ to_tsquery('english', 'gaming & laptop');
 - Slower inserts/updates
 - Essential for JSON, arrays, full-text
 
+</details>
+
 ---
 
 #### 4. Partial Index
 
 **Best for:** Indexing subset of data
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Only index active products
@@ -4549,11 +4626,16 @@ WHERE status = 'pending';  -- Only pending orders
 - Reduced maintenance cost
 - Targets specific query patterns
 
+</details>
+
 ---
 
 #### 5. Composite Index (Multiple Columns)
 
 **Best for:** Queries filtering on multiple columns
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Create composite index
@@ -4601,11 +4683,16 @@ WHERE c = 3                    -- ❌ Skips 'a' and 'b'
 WHERE b = 2 AND c = 3          -- ❌ Skips 'a'
 ```
 
+</details>
+
 ---
 
 #### 6. Covering Index (Index-Only Scan)
 
 **Definition:** Index contains ALL columns needed by query
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Query needs: email, name, city
@@ -4634,6 +4721,8 @@ EXPLAIN SELECT name, city FROM users WHERE email = 'foyez@example.com';
 **Trade-offs:**
 - Larger index size
 - Slower writes (more data to update in index)
+
+</details>
 
 ---
 
@@ -4767,6 +4856,9 @@ CREATE INDEX idx_reviews_approved ON reviews(is_approved) WHERE is_approved = tr
 
 #### 1. Single Field Index
 
+<details>
+<summary><strong>View contents</strong></summary>
+
 ```javascript
 // Create single field index
 db.users.createIndex({ email: 1 });  // 1 = ascending, -1 = descending
@@ -4779,9 +4871,14 @@ db.users.find({ email: "foyez@example.com" }).explain("executionStats");
 // Look for "stage": "IXSCAN" (index scan)
 ```
 
+</details>
+
 ---
 
 #### 2. Compound Index
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Create compound index
@@ -4804,9 +4901,14 @@ db.posts.createIndex({ userId: 1, status: 1 });  // ✅ Good
 db.posts.createIndex({ status: 1, userId: 1 });  // ❌ Bad
 ```
 
+</details>
+
 ---
 
 #### 3. Multikey Index (Arrays)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Automatically created for array fields
@@ -4833,9 +4935,14 @@ db.posts.createIndex({ tags: 1, categories: 1 });
 db.posts.createIndex({ tags: 1, status: 1 });
 ```
 
+</details>
+
 ---
 
 #### 4. Text Index (Full-Text Search)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Create text index
@@ -4888,9 +4995,14 @@ db.posts.createIndex(
 );
 ```
 
+</details>
+
 ---
 
 #### 5. Geospatial Index (2dsphere)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Create geospatial index
@@ -4937,9 +5049,14 @@ db.restaurants.find({
 });
 ```
 
+</details>
+
 ---
 
 #### 6. Partial Index (Sparse Index)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Only index documents where field exists
@@ -4963,9 +5080,14 @@ db.posts.createIndex(
 // Benefits: Smaller index, faster maintenance
 ```
 
+</details>
+
 ---
 
 #### 7. TTL Index (Time-To-Live)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Auto-delete documents after time
@@ -4990,9 +5112,14 @@ db.sessions.createIndex(
 // - Rate limiting counters
 ```
 
+</details>
+
 ---
 
 #### 8. Unique Index
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Ensure unique values
@@ -5009,6 +5136,8 @@ db.followers.createIndex(
 );
 // Ensures user can't follow same person twice
 ```
+
+</details>
 
 ---
 
@@ -5094,6 +5223,9 @@ db.posts.find({ tags: "mongodb" });
 
 #### 1. Use EXPLAIN ANALYZE
 
+<details>
+<summary><strong>View contents</strong></summary>
+
 **The #1 tool for optimization**
 
 ```sql
@@ -5131,9 +5263,14 @@ Execution Time: 0.056 ms
 ✅ Result: 44x faster! (2.489ms → 0.056ms)
 ```
 
+</details>
+
 ---
 
 #### 2. SELECT Only Needed Columns
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- ❌ BAD: Retrieves all columns
@@ -5150,9 +5287,14 @@ SELECT id, name, price FROM products;
 -- 10x less data!
 ```
 
+</details>
+
 ---
 
 #### 3. Use LIMIT for Pagination
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- ❌ BAD: Retrieves all rows
@@ -5176,9 +5318,14 @@ ORDER BY created_at DESC
 LIMIT 20;
 ```
 
+</details>
+
 ---
 
 #### 4. Avoid SELECT DISTINCT When Possible
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- ❌ SLOW: DISTINCT sorts entire result set
@@ -5191,9 +5338,14 @@ SELECT city FROM users GROUP BY city;
 -- Or use EXISTS instead
 ```
 
+</details>
+
 ---
 
 #### 5. Use EXISTS Instead of IN for Large Subqueries
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- ❌ SLOW: IN with large subquery
@@ -5210,9 +5362,14 @@ WHERE EXISTS (
 -- Stops checking once found
 ```
 
+</details>
+
 ---
 
 #### 6. Avoid Functions on Indexed Columns
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- ❌ BAD: Can't use index
@@ -5228,9 +5385,14 @@ CREATE INDEX idx_users_email_lower ON users(LOWER(email));
 SELECT * FROM users WHERE LOWER(email) = 'foyez@example.com';
 ```
 
+</details>
+
 ---
 
 #### 7. Use JOIN Instead of Subqueries
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- ❌ SLOW: Correlated subquery
@@ -5250,9 +5412,14 @@ GROUP BY u.id, u.name;
 -- Single query with JOIN
 ```
 
+</details>
+
 ---
 
 #### 8. Batch Operations
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- ❌ BAD: Multiple queries (N round trips)
@@ -5273,9 +5440,14 @@ COPY products(name, price) FROM '/path/to/products.csv' WITH CSV;
 -- Can be 100x faster for large datasets
 ```
 
+</details>
+
 ---
 
 #### 9. Use WHERE Before JOIN (Let Optimizer Handle It)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Modern query optimizers handle this, but be aware:
@@ -5295,11 +5467,16 @@ JOIN orders o ON u.id = o.user_id;
 -- Use EXPLAIN to verify
 ```
 
+</details>
+
 ---
 
 ### MongoDB Query Optimization
 
 #### 1. Use explain()
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Check if query uses index
@@ -5322,9 +5499,14 @@ db.posts.find({ tags: "mongodb" }).explain("executionStats");
 // If totalDocsExamined >> nReturned, query is inefficient
 ```
 
+</details>
+
 ---
 
 #### 2. Project Only Needed Fields
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ❌ BAD: Returns all fields
@@ -5338,9 +5520,14 @@ db.posts.find(
 // 1 = include, 0 = exclude
 ```
 
+</details>
+
 ---
 
 #### 3. Use Covered Queries
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Index contains all fields in query + projection
@@ -5355,9 +5542,14 @@ db.posts.find(
 // This means query answered entirely from index!
 ```
 
+</details>
+
 ---
 
 #### 4. Limit Results
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ✅ Always use limit for pagination
@@ -5376,9 +5568,14 @@ db.posts.find({
 .limit(20);
 ```
 
+</details>
+
 ---
 
 #### 5. Avoid Large Documents
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ❌ BAD: Embedding grows huge
@@ -5401,9 +5598,14 @@ db.comments.find({ postId: ObjectId("post_id") })
   .limit(20);
 ```
 
+</details>
+
 ---
 
 #### 6. Use Aggregation Efficiently
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ✅ Put $match early in pipeline (uses index)
@@ -5422,9 +5624,14 @@ db.posts.aggregate([
 ]);
 ```
 
+</details>
+
 ---
 
 #### 7. Avoid $where and $expr When Possible
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ❌ SLOW: JavaScript execution, can't use index
@@ -5453,9 +5660,14 @@ db.products.find({ marginPercent: { $gt: 0.5 } });
 // Can use index on marginPercent!
 ```
 
+</details>
+
 ---
 
 #### 8. Batch Operations
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ❌ BAD: Multiple operations
@@ -5485,6 +5697,8 @@ const bulkOps = [
 
 await db.products.bulkWrite(bulkOps);
 ```
+
+</details>
 
 ---
 
@@ -5552,6 +5766,9 @@ Benefits:
 
 ### 1. Application-Level Caching (Redis)
 
+<details>
+<summary><strong>View contents</strong></summary>
+
 ```javascript
 const Redis = require('ioredis');
 const redis = new Redis();
@@ -5591,11 +5808,16 @@ async function getProductCached(id) {
 // After 5 minutes: Cache expires, MISS again
 ```
 
+</details>
+
 ---
 
 ### 2. Cache Invalidation
 
 **"There are only two hard things in Computer Science: cache invalidation and naming things." - Phil Karlton**
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Strategy 1: Time-based (TTL)
@@ -5643,11 +5865,16 @@ async function updateProductVersioned(id, data) {
 }
 ```
 
+</details>
+
 ---
 
 ### 3. Caching Patterns
 
 #### Pattern 1: Cache-Aside (Lazy Loading)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Application checks cache first
@@ -5669,9 +5896,14 @@ async function getCacheAside(key) {
 // ❌ Cons: First request is slow (cache miss)
 ```
 
+</details>
+
 ---
 
 #### Pattern 2: Write-Through
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Application writes to cache and DB
@@ -5687,9 +5919,14 @@ async function setWriteThrough(key, data) {
 // ❌ Cons: Slower writes (2 operations)
 ```
 
+</details>
+
 ---
 
 #### Pattern 3: Write-Behind (Write-Back)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Application writes to cache only
@@ -5716,9 +5953,14 @@ async function syncWorker() {
 // ❌ Cons: Risk of data loss if cache fails before sync
 ```
 
+</details>
+
 ---
 
 #### Pattern 4: Refresh-Ahead
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Proactively refresh cache before expiration
@@ -5750,9 +5992,14 @@ async function refreshCache(key) {
 // ❌ Cons: More complex, may refresh unused data
 ```
 
+</details>
+
 ---
 
 ### 4. Database-Level Caching
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 #### PostgreSQL Shared Buffers
 
@@ -5792,9 +6039,14 @@ storage:
       cacheSizeGB: 4  // 50% of RAM minus 1GB recommended
 ```
 
+</details>
+
 ---
 
 ### 5. Materialized Views (Pre-computed Results)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 #### SQL Materialized View
 
@@ -5823,6 +6075,8 @@ REFRESH MATERIALIZED VIEW product_stats;
 -- Or concurrent refresh (doesn't lock readers)
 REFRESH MATERIALIZED VIEW CONCURRENTLY product_stats;
 ```
+
+</details>
 
 ---
 
@@ -6029,6 +6283,9 @@ Replicas:
 3. Serve read queries
 ```
 
+<details>
+<summary><strong>View contents</strong></summary>
+
 #### PostgreSQL Replication Setup
 
 ```sql
@@ -6088,7 +6345,12 @@ SELECT * FROM pg_stat_replication;
 SELECT pg_is_in_recovery();  -- Should return true
 ```
 
+</details><br>
+
 #### Application Implementation
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 const { Pool } = require('pg');
@@ -6163,6 +6425,8 @@ async function createAndGetUser(userData) {
 }
 ```
 
+</details>
+
 ---
 
 ### MongoDB Replication (Replica Sets)
@@ -6177,13 +6441,16 @@ async function createAndGetUser(userData) {
                            │
          ┌─────────────────┼─────────────────┐
          │                 │                 │
-    ┌────▼─────┐     ┌────▼─────┐     ┌────▼─────┐
-    │Secondary1│     │Secondary2│     │Secondary3│
-    │  READS   │     │  READS   │     │  READS   │
-    └──────────┘     └──────────┘     └──────────┘
+    ┌────▼─────┐      ┌────▼─────┐      ┌────▼─────┐
+    │Secondary1│      │Secondary2│      │Secondary3│
+    │  READS   │      │  READS   │      │  READS   │
+    └──────────┘      └──────────┘      └──────────┘
 ```
 
 #### MongoDB Replica Set Setup
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ==========================================
@@ -6259,6 +6526,8 @@ const user = await db.collection('users')
 { readPreference: 'nearest' }
 ```
 
+</details>
+
 ---
 
 ### Replication Lag
@@ -6275,6 +6544,9 @@ Timeline:
 ```
 
 **Solutions:**
+
+<details>
+<summary><strong>View solutions</strong></summary>
 
 ```javascript
 // Solution 1: Read from primary after write
@@ -6319,6 +6591,8 @@ async function getUserSmart(userId, req) {
 }
 ```
 
+</details>
+
 ---
 
 ### Benefits & Challenges
@@ -6361,6 +6635,10 @@ async function getUserSmart(userId, req) {
 ```
 
 **Shard Selection Logic:**
+
+<details>
+<summary><strong>View contents</strong></summary>
+
 ```javascript
 function getShardForUser(userId) {
   return userId % 3;  // 3 shards (0, 1, 2)
@@ -6395,6 +6673,8 @@ async function getUserOrders(userId) {
 }
 ```
 
+</details>
+
 ---
 
 #### Geographic Sharding
@@ -6409,6 +6689,9 @@ async function getUserOrders(userId) {
 │ India, China │    │ France, UK   │    │ Canada       │
 └──────────────┘    └──────────────┘    └──────────────┘
 ```
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 function getShardByRegion(country) {
@@ -6440,6 +6723,8 @@ async function createUser(userData) {
 }
 ```
 
+</details>
+
 ---
 
 ### MongoDB Sharding
@@ -6463,6 +6748,9 @@ MongoDB has **built-in sharding** that's automatic and transparent.
 ```
 
 #### MongoDB Sharding Setup
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ==========================================
@@ -6520,6 +6808,8 @@ sh.shardCollection("mydb.logs", { status: 1 });              // ❌ Few values
 sh.shardCollection("mydb.orders", { created_at: 1 });        // ❌ Monotonic (hotspot)
 ```
 
+</details>
+
 ---
 
 ### Benefits:
@@ -6531,6 +6821,9 @@ sh.shardCollection("mydb.orders", { created_at: 1 });        // ❌ Monotonic (h
 ### Sharding Challenges
 
 #### Challenge 1: Cross-Shard Queries
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ❌ Can't JOIN across shards
@@ -6552,9 +6845,14 @@ db.users.find().sort({ score: -1 }).limit(10);
 // Mongos queries all shards and merges results
 ```
 
+</details>
+
 ---
 
 #### Challenge 2: Distributed Transactions
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ❌ Can't have ACID transaction across shards (SQL)
@@ -6588,9 +6886,14 @@ try {
 }
 ```
 
+</details>
+
 ---
 
 #### Challenge 3: Rebalancing
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Adding new shard changes hash function
@@ -6617,9 +6920,14 @@ sh.addShard("mongodb://new-shard:27017");
 // MongoDB migrates data automatically (balancer)
 ```
 
+</details>
+
 ---
 
 #### Challenge 4: Hotspots
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Problem: Celebrity user creates millions of records
@@ -6639,6 +6947,8 @@ if (isCelebrityUser(userId)) {
 }
 ```
 
+</details>
+
 ---
 
 ## Connection Pooling
@@ -6648,6 +6958,9 @@ if (isCelebrityUser(userId)) {
 **Solution:** Reuse connections from a pool
 
 ### SQL Connection Pooling
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 const { Pool } = require('pg');
@@ -6720,9 +7033,14 @@ if (pool.waitingCount > 0) {
 }
 ```
 
+</details>
+
 ---
 
 ### MongoDB Connection Pooling
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 const { MongoClient } = require('mongodb');
@@ -6767,9 +7085,14 @@ client.on('connectionCheckOutFailed', (event) => {
 });
 ```
 
+</details>
+
 ---
 
 ### Redis Connection Pooling
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 const Redis = require('ioredis');
@@ -6802,11 +7125,16 @@ await redis.set('key', 'value');
 await redis.get('key');
 ```
 
+</details>
+
 ---
 
 ## Advanced Performance Concepts
 
 ### 1. Query Result Streaming
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ❌ BAD: Load all results into memory
@@ -6841,9 +7169,14 @@ for await (const user of streamUsers()) {
 }
 ```
 
+</details>
+
 ---
 
 ### 2. Prepared Statements
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ✅ Prepared statements (faster, safer)
@@ -6863,9 +7196,14 @@ await pool.query(preparedQuery, [3]);
 // MongoDB: Queries are automatically cached
 ```
 
+</details>
+
 ---
 
 ### 3. Bulk Operations
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // SQL: Batch inserts
@@ -6894,9 +7232,14 @@ await db.collection('users').insertMany(users, { ordered: false });
 // Parallel inserts
 ```
 
+</details>
+
 ---
 
 ### 4. Pagination Optimization
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- ❌ SLOW: Large OFFSET
@@ -6928,9 +7271,14 @@ function paginatePosts(lastSeenDate = null, limit = 20) {
 }
 ```
 
+</details>
+
 ---
 
 ### 5. Database Partitioning
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Split large tables by date range
@@ -6959,11 +7307,16 @@ SELECT * FROM orders WHERE created_at >= '2024-01-15';
 -- 4. Parallel query execution
 ```
 
+</details>
+
 ---
 
 ## Advanced Database Concepts
 
 ### 1. Transactions & Isolation Levels
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Set isolation level
@@ -6982,9 +7335,14 @@ COMMIT;
 -- READ UNCOMMITTED: Fastest, least safe
 ```
 
+</details>
+
 ---
 
 ### 2. Database Locks
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Row-level lock (locks specific rows)
@@ -6999,9 +7357,14 @@ SELECT pg_advisory_lock(123);
 SELECT pg_advisory_unlock(123);
 ```
 
+</details>
+
 ---
 
 ### 3. Full-Text Search
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Add tsvector column
@@ -7027,9 +7390,14 @@ FROM products
 WHERE search_vector @@ to_tsquery('english', 'gaming & laptop');
 ```
 
+</details>
+
 ---
 
 ### 4. Partitioning (Split Large Tables)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Partition by range (date)
@@ -7060,9 +7428,14 @@ SELECT * FROM orders WHERE created_at >= '2024-01-15';
 -- 3. Easy to drop old data (DROP TABLE orders_2023_01)
 ```
 
+</details>
+
 ---
 
 ### 5. Database Triggers
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Auto-update timestamp
@@ -7115,6 +7488,8 @@ CREATE TRIGGER audit_users
   EXECUTE FUNCTION audit_changes();
 ```
 
+</details>
+
 ---
 
 ## Database Security
@@ -7122,6 +7497,9 @@ CREATE TRIGGER audit_users
 ### 1. Principle of Least Privilege
 
 **Rule:** Give each user/application only the permissions they need.
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 #### SQL (PostgreSQL)
 
@@ -7207,11 +7585,16 @@ db.createRole({
 db.grantRolesToUser("app_user", ["orderManager"]);
 ```
 
+</details>
+
 ---
 
 ### 2. SQL Injection Prevention
 
 **SQL Injection:** Attacker manipulates SQL queries through user input.
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ❌ DANGEROUS: SQL Injection vulnerable
@@ -7301,9 +7684,14 @@ async function loginSanitized(username, password) {
 }
 ```
 
+</details>
+
 ---
 
 ### 3. Password Security
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 const bcrypt = require('bcrypt');
@@ -7379,9 +7767,14 @@ function validatePasswordStrength(password) {
 }
 ```
 
+</details>
+
 ---
 
 ### 4. Encryption
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 #### Encryption at Rest (SQL)
 
@@ -7471,9 +7864,14 @@ const user = await db.collection('users').findOne({ name: "Foyez" });
 const decryptedSSN = await encryption.decrypt(user.ssn);
 ```
 
+</details>
+
 ---
 
 ### 5. Environment Variables & Secrets Management
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // ❌ NEVER hardcode credentials
@@ -7525,9 +7923,14 @@ const dbCreds = await getDbCredentials();
 const pool = new Pool(dbCreds);
 ```
 
+</details>
+
 ---
 
 ### 6. Row-Level Security (PostgreSQL)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Enable row-level security
@@ -7559,6 +7962,8 @@ SET app.current_tenant = '456';
 SELECT * FROM orders;  -- Only tenant 456's orders
 ```
 
+</details>
+
 ---
 
 ## Monitoring & Observability
@@ -7566,6 +7971,9 @@ SELECT * FROM orders;  -- Only tenant 456's orders
 ### Key Metrics to Monitor
 
 #### 1. Query Performance (SQL)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- PostgreSQL: Enable pg_stat_statements
@@ -7599,7 +8007,14 @@ LIMIT 10;
 SELECT pg_stat_statements_reset();
 ```
 
+</details>
+
+---
+
 #### 2. Query Performance (MongoDB)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Enable profiling
@@ -7624,9 +8039,14 @@ db.system.profile.find().sort({ ts: -1 }).pretty();
 db.setProfilingLevel(0);
 ```
 
+</details>
+
 ---
 
 #### 3. Connection Pool Metrics
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // PostgreSQL
@@ -7663,9 +8083,14 @@ client.on('connectionCheckOutFailed', (event) => {
 });
 ```
 
+</details>
+
 ---
 
 #### 4. Cache Hit Ratio
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- PostgreSQL: Should be > 99%
@@ -7700,9 +8125,14 @@ setInterval(async () => {
 }, 60000);
 ```
 
+</details>
+
 ---
 
 #### 5. Replication Lag
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- PostgreSQL: Check replication lag (on primary)
@@ -7727,9 +8157,14 @@ rs.printSlaveReplicationInfo();
 db.adminCommand({ replSetGetStatus: 1 });
 ```
 
+</details>
+
 ---
 
 #### 6. Disk Usage
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```sql
 -- Database size
@@ -7751,11 +8186,16 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC
 LIMIT 20;
 ```
 
+</details>
+
 ---
 
 ### Monitoring Tools
 
 #### 1. Prometheus + Grafana
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```yaml
 # docker-compose.yml
@@ -7797,7 +8237,12 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
 ```
 
+</details>
+
 #### 2. Application Performance Monitoring
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 // Example: Custom metrics collection
@@ -7839,7 +8284,12 @@ app.get('/metrics', (req, res) => {
 });
 ```
 
+</details>
+
 #### 3. pgBadger (PostgreSQL Log Analyzer)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```bash
 # Enable logging in postgresql.conf
@@ -7856,7 +8306,7 @@ pgbadger /var/log/postgresql/postgresql-*.log -o report.html
 # Open report.html in browser
 ```
 
----
+</details>
 
 ---
 
@@ -7865,6 +8315,9 @@ pgbadger /var/log/postgresql/postgresql-*.log -o report.html
 ### SQL Backup Strategies
 
 #### 1. Logical Backups (SQL Dump)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 **PostgreSQL (pg_dump):**
 
@@ -7916,9 +8369,14 @@ mysqldump -u root -p mydb users orders > /backups/tables.sql
 mysql -u root -p mydb < /backups/mydb_20241229.sql
 ```
 
+</details>
+
 ---
 
 #### 2. Physical Backups
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```bash
 # PostgreSQL: Binary copy of entire cluster
@@ -7942,9 +8400,14 @@ mysqlbackup --backup-dir=/backups/physical --backup-image=backup.mbi --compress 
 mysqlbackup --backup-dir=/backups/physical --backup-image=backup.mbi copy-back-and-apply-log
 ```
 
+</details>
+
 ---
 
 #### 3. Continuous Archiving (WAL)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```bash
 # postgresql.conf
@@ -7957,9 +8420,14 @@ archive_command = 'cp %p /archive/%f'  # Or use s3 sync
 pg_restore --target-time='2024-12-29 10:30:00' /backups/basebackup
 ```
 
+</details>
+
 ---
 
 ### MongoDB Backup Strategies
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```bash
 # 1. mongodump (logical backup)
@@ -7986,6 +8454,8 @@ mongorestore --archive=/backups/mydb.archive --gzip
 # 3. Continuous backup (MongoDB Atlas)
 # Automatic continuous backups with point-in-time restore
 ```
+
+</details>
 
 ---
 
@@ -8050,6 +8520,9 @@ fi
 
 #### Scenario 1: Accidental DELETE
 
+<details>
+<summary><strong>View contents</strong></summary>
+
 ```sql
 -- Oops! Deleted all users
 DELETE FROM users;  -- No WHERE clause!
@@ -8070,9 +8543,14 @@ ROLLBACK;  -- Undo if wrong
 COMMIT;  -- Apply if correct
 ```
 
+</details>
+
 ---
 
 #### Scenario 2: Corrupted Database
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```bash
 # PostgreSQL: Check for corruption
@@ -8085,9 +8563,14 @@ pg_basebackup -D /var/lib/postgresql/data -U replication_user
 systemctl start postgresql
 ```
 
+</details>
+
 ---
 
 #### Scenario 3: Complete Server Loss
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```bash
 # Recovery steps:
@@ -8102,11 +8585,16 @@ pg_restore -U postgres -d mydb /tmp/mydb_20241229.dump
 # 6. Test thoroughly before going live
 ```
 
+</details>
+
 ---
 
 ## Database Testing
 
 ### 1. Unit Testing (Mock Database)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 const { jest } = require('@jest/globals');
@@ -8152,9 +8640,14 @@ describe('UserService', () => {
 });
 ```
 
+</details>
+
 ---
 
 ### 2. Integration Testing (Test Database)
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```javascript
 const { Pool } = require('pg');
@@ -8248,9 +8741,14 @@ describe('Database Integration', () => {
 });
 ```
 
+</details>
+
 ---
 
 ### 3. Load Testing
+
+<details>
+<summary><strong>View contents</strong></summary>
 
 ```bash
 # PostgreSQL: pgbench
@@ -8276,6 +8774,8 @@ pgbench -c 10 -j 2 -t 1000 testdb
 
 pgbench -c 10 -j 2 -t 1000 -f bench.sql testdb
 ```
+
+</details>
 
 ---
 
@@ -8338,6 +8838,9 @@ You can only have **2 of 3**:
 
 **Answer:**
 
+<details>
+<summary><strong>View answer</strong></summary>
+
 "SQL and NoSQL databases differ fundamentally in structure, scaling, and use cases.
 
 **SQL (Relational):**
@@ -8398,11 +8901,16 @@ Elasticsearch: Product search (full-text)
 4. Relationships: Complex → SQL, Simple → NoSQL
 5. Team expertise: SQL familiar → SQL, else evaluate"
 
+</details>
+
 ---
 
 ### Q2: What is database normalization? Explain with an example.
 
 **Answer:**
+
+<details>
+<summary><strong>View answer</strong></summary>
 
 "Normalization organizes data to reduce redundancy and improve integrity.
 
@@ -8502,13 +9010,18 @@ order_items:
 ```
 E-commerce: Normalize user, product, order data
 Analytics: Denormalize for reporting (star schema)
-```"
+```
+
+</details>
 
 ---
 
 ### Q3: Explain database indexing. How do they work, What are the types and when to use them?
 
 **Answer:**
+
+<details>
+<summary><strong>View answer</strong></summary>
 
 "An index is a data structure that speeds up data retrieval at the cost of additional writes and storage.
 
@@ -8653,11 +9166,17 @@ db.sessions.createIndex({ createdAt: 1 }, { expireAfterSeconds: 3600 });
 - ❌ Storage space
 - ❌ Maintenance overhead"
 
+</details>
+
 ---
 
 ### Q4: What's the difference between clustered and non-clustered indexes?
 
 **Answer:**
+
+<details>
+<summary><strong>View answer</strong></summary>
+
 "Clustered and non-clustered indexes differ in how data is physically stored.
 
 **Clustered Index:**
@@ -8710,11 +9229,16 @@ SELECT * FROM users WHERE email = 'alice@example.com';
 - Clustered: Use for primary key or frequently ranged column
 - Non-clustered: Create for WHERE, JOIN, ORDER BY columns"
 
+</details>
+
 ---
 
 ### Q5: What is the CAP theorem and how does it apply to databases?
 
 **Answer:**
+
+<details>
+<summary><strong>View answer</strong></summary>
 
 "CAP theorem states that in a distributed system, you can only guarantee 2 of 3:
 
@@ -8816,13 +9340,19 @@ AP: Product views, recommendations (can be stale)
 In distributed systems, network partitions WILL happen
 So you must choose between C and A
 Most modern systems: Choose per use case
-```"
+```
+
+</details>
 
 ---
 
 ### Q6: Explain database replication and when to use it
 
 **Answer:**
+
+<details>
+<summary><strong>View answer</strong></summary>
+
 "Database replication creates copies (replicas) of the database for read scaling and redundancy.
 
 **Structure:**
@@ -8882,11 +9412,16 @@ const balance = await primaryDB.query('SELECT balance FROM accounts WHERE id = ?
 - Order placement: Primary (consistency critical)
 - Analytics: Dedicated replica (don't affect production)"
 
+</details>
+
 ---
 
 ### Q7: Explain database transactions and isolation levels.
 
 **Answer:**
+
+<details>
+<summary><strong>View answer</strong></summary>
 
 "Transactions group operations that must succeed or fail together, with 4 isolation levels controlling how they interact.
 
@@ -9047,11 +9582,17 @@ try {
 - Most apps: Read Committed
 - Financial: Serializable"
 
+</details>
+
 ---
 
 ### Q8: How do you handle database migrations?
 
 **Answer:**
+
+<details>
+<summary><strong>View answer</strong></summary>
+
 "Database migrations are version-controlled schema changes.
 
 **Tools:** Flyway, Liquibase, Prisma Migrate, Rails migrations
@@ -9147,13 +9688,18 @@ flyway migrate  # Run all pending migrations
 flyway info     # Show migration status
 flyway validate # Check migration consistency
 flyway repair   # Fix checksum issues
-```"
+```
+
+</details>
 
 ---
 
 ### Q9: How would you design a database for a social media platform?
 
 **Answer:**
+
+<details>
+<summary><strong>View answer</strong></summary>
 
 "I'll walk through a complete design process:
 
@@ -9397,11 +9943,16 @@ async function createPost(userId, postData) {
 - Flexible content (MongoDB)
 - Strong consistency where needed (PostgreSQL)"
 
+</details>
+
 ---
 
 ### Q10: Explain sharding and when to use it.
 
 **Answer:**
+
+<details>
+<summary><strong>View answer</strong></summary>
 
 "Sharding splits data across multiple databases to scale writes horizontally.
 
@@ -9574,13 +10125,18 @@ if (isCelebrity(userId)) {
 3. Monitor shard distribution
 4. Use consistent hashing
 5. Consider compound shard keys
-```"
+```
+
+</details>
 
 ---
 
 ### Q11: What is the difference between MongoDB's embedding and referencing?
 
 **Answer:**
+
+<details>
+<summary><strong>View answer</strong></summary>
 
 "Embedding and referencing are two ways to model relationships in MongoDB.
 
@@ -9800,13 +10356,18 @@ db.comments.find({ postId: ObjectId("post_id") });
 ```
 Embed: Data accessed together
 Reference: Data accessed independently or large datasets
-```"
+```
+
+</details>
 
 ---
 
 ### Q12: How do you optimize a slow database query?
 
 **Answer:**
+
+<details>
+<summary><strong>View answer</strong></summary>
 
 "I follow a systematic approach:
 
@@ -10015,13 +10576,14 @@ SELECT
 FROM pg_stat_statements
 WHERE mean_exec_time > 100
 ORDER BY mean_exec_time DESC;
-```"
+```
+
+</details>
 
 ---
 
 ## Quick Reference
 
-```
 ```
 ACID: "A Car Is Durable"
 - Atomicity: All or nothing
