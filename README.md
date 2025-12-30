@@ -3661,3 +3661,686 @@ async function performanceTest() {
 ```
 
 ---
+
+## ACID Properties
+
+### Easy Memory Method: "**A Car Is Durable**"
+
+- **A** - **A**tomicity (All or nothing)
+- **C** - **C**onsistency (Rules always followed)
+- **I** - **I**solation (No interference)
+- **D** - **D**urability (Survives crashes)
+
+---
+
+### 1. Atomicity ⚛️
+**"All or Nothing - No Half-Done Work"**
+
+#### Real-Life Analogy: ATM Withdrawal
+1. Check balance ($500)
+2. Deduct $100 from account
+3. Dispense $100 cash
+
+❌ **What if power goes out at step 2?**
+- Money deducted but cash not dispensed
+- You lose $100!
+
+✅ **With Atomicity:**
+- Either ALL steps complete, or NONE
+- If power fails, transaction rolls back
+- Your $500 stays intact
+
+#### SQL Example
+
+```sql
+-- ❌ WITHOUT Transaction (DANGEROUS!)
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+-- ⚡ POWER FAILURE HERE!
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+-- Result: $100 disappeared!
+
+-- ✅ WITH Transaction (SAFE!)
+BEGIN TRANSACTION;
+  
+  -- Step 1: Deduct from sender
+  UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+  
+  -- Step 2: Add to receiver
+  UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+  
+  -- ⚡ If power fails anywhere above, EVERYTHING rolls back!
+
+COMMIT;
+-- Only NOW is the transfer permanent
+```
+
+#### MongoDB Example
+
+```javascript
+// MongoDB Transactions (ACID compliant since v4.0)
+const session = client.startSession();
+
+try {
+  await session.startTransaction();
+  
+  // Deduct from sender
+  await db.collection('accounts').updateOne(
+    { _id: ObjectId("sender_id") },
+    { $inc: { balance: -100 } },
+    { session }
+  );
+  
+  // Add to receiver
+  await db.collection('accounts').updateOne(
+    { _id: ObjectId("receiver_id") },
+    { $inc: { balance: 100 } },
+    { session }
+  );
+  
+  await session.commitTransaction();
+  console.log("Transfer successful");
+  
+} catch (error) {
+  await session.abortTransaction();
+  console.error("Transfer failed, rolled back");
+} finally {
+  session.endSession();
+}
+```
+
+**E-Commerce Example:**
+
+```sql
+BEGIN TRANSACTION;
+
+  -- 1. Create order
+  INSERT INTO orders (user_id, total) VALUES (1, 150.00);
+  
+  -- 2. Add order items
+  INSERT INTO order_items (order_id, product_id, quantity)
+  VALUES (1, 101, 2);
+  
+  -- 3. Decrease stock
+  UPDATE products SET stock = stock - 2 WHERE id = 101;
+  
+  -- 4. Clear cart
+  DELETE FROM cart_items WHERE user_id = 1;
+  
+  -- If ANY step fails, EVERYTHING rolls back!
+
+COMMIT;
+```
+
+**Key Points:**
+- Transaction = smallest indivisible unit
+- Either complete success or complete failure
+- No partial updates
+- Critical for financial systems
+
+---
+
+### 2. Consistency 🎯
+**"Data Always Follows the Rules"**
+
+#### Real-Life Analogy
+**Chess Rules**: A pawn can't suddenly move like a queen. The game enforces rules. Similarly, database enforces: "balance can't be negative" or "email must be unique."
+
+#### SQL Example
+
+```sql
+-- Database enforces consistency through constraints
+
+CREATE TABLE accounts (
+  id SERIAL PRIMARY KEY,
+  balance DECIMAL(10, 2) NOT NULL CHECK (balance >= 0),  -- Rule 1
+  email VARCHAR(255) UNIQUE NOT NULL,                    -- Rule 2
+  status VARCHAR(20) CHECK (status IN ('active', 'closed'))  -- Rule 3
+);
+
+-- ❌ This violates Rule 1 (negative balance)
+UPDATE accounts SET balance = -50 WHERE id = 1;
+-- ERROR: Check constraint "accounts_balance_check" violated
+
+-- ❌ This violates Rule 2 (duplicate email)
+INSERT INTO accounts (email) VALUES ('existing@email.com');
+-- ERROR: Duplicate key value violates unique constraint
+
+-- ✅ This follows all rules
+UPDATE accounts SET balance = 100 WHERE id = 1;
+-- SUCCESS
+```
+
+#### MongoDB Example
+
+```javascript
+// Schema validation in MongoDB
+db.createCollection("accounts", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["balance", "email"],
+      properties: {
+        balance: {
+          bsonType: "double",
+          minimum: 0  // Can't be negative
+        },
+        email: {
+          bsonType: "string",
+          pattern: "^.+@.+\..+$"  // Must be valid email
+        },
+        status: {
+          enum: ["active", "closed"]  // Must be one of these
+        }
+      }
+    }
+  }
+});
+
+// ❌ Violates balance rule
+await db.accounts.insertOne({ balance: -50, email: "user@example.com" });
+// ERROR: Document failed validation
+
+// ✅ Follows all rules
+await db.accounts.insertOne({ balance: 100, email: "user@example.com" });
+// SUCCESS
+```
+
+**Complex Consistency Example:**
+
+```sql
+-- Rule: Order total must match sum of items
+
+CREATE OR REPLACE FUNCTION check_order_total()
+RETURNS TRIGGER AS $$
+DECLARE
+  calculated_total DECIMAL(10, 2);
+BEGIN
+  -- Calculate actual total from order items
+  SELECT SUM(quantity * price) INTO calculated_total
+  FROM order_items
+  WHERE order_id = NEW.id;
+  
+  -- Verify it matches the order total
+  IF NEW.total != calculated_total THEN
+    RAISE EXCEPTION 'Order total (%) does not match items total (%)',
+      NEW.total, calculated_total;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER validate_order_total
+  BEFORE INSERT OR UPDATE ON orders
+  FOR EACH ROW
+  EXECUTE FUNCTION check_order_total();
+
+-- ❌ This will fail (total doesn't match items)
+INSERT INTO orders (id, user_id, total) VALUES (1, 1, 100.00);
+INSERT INTO order_items (order_id, product_id, quantity, price)
+VALUES (1, 101, 2, 50.00);  -- Total should be 100.00
+-- But if we update order total incorrectly:
+UPDATE orders SET total = 150.00 WHERE id = 1;
+-- ERROR: Order total (150) does not match items total (100)
+```
+
+**Key Points:**
+- Database moves from one valid state to another
+- Constraints enforce business rules
+- Invalid data is rejected
+- Maintains data integrity
+
+---
+
+### 3. Isolation 🔒
+**"Transactions Don't Interfere with Each Other"**
+
+#### Real-Life Analogy
+**Movie Theater Seats**: Two people try to book seat A5 simultaneously. Only one succeeds. They don't see each other's half-booked seats or cause double-booking.
+
+#### The Problem: Race Conditions
+
+```sql
+-- ❌ WITHOUT proper isolation:
+-- User A and User B both try to buy the last item (stock = 1)
+
+-- Time 1: User A checks stock
+SELECT stock FROM products WHERE id = 101;
+-- Returns: 1 (in stock!)
+
+-- Time 2: User B checks stock (before A completes purchase)
+SELECT stock FROM products WHERE id = 101;
+-- Returns: 1 (in stock!) 🚨 UH OH!
+
+-- Time 3: User A buys
+UPDATE products SET stock = stock - 1 WHERE id = 101;
+-- Stock = 0
+
+-- Time 4: User B buys
+UPDATE products SET stock = stock - 1 WHERE id = 101;
+-- Stock = -1 🚨 OVERSOLD!
+```
+
+#### Solution: Proper Isolation
+
+```sql
+-- ✅ WITH proper isolation (FOR UPDATE lock)
+
+-- User A's transaction
+BEGIN TRANSACTION;
+  
+  -- Lock the row (other transactions must wait)
+  SELECT stock FROM products WHERE id = 101 FOR UPDATE;
+  -- Returns: 1
+  
+  -- Check if in stock
+  IF stock >= 1 THEN
+    UPDATE products SET stock = stock - 1 WHERE id = 101;
+  END IF;
+
+COMMIT;
+-- Now User B can proceed
+
+-- User B's transaction (must wait for A to finish)
+BEGIN TRANSACTION;
+  
+  SELECT stock FROM products WHERE id = 101 FOR UPDATE;
+  -- Returns: 0 (User A already bought it)
+  
+  IF stock >= 1 THEN
+    -- Won't execute
+  ELSE
+    RAISE EXCEPTION 'Out of stock';  -- ✅ Correct!
+  END IF;
+
+COMMIT;
+```
+
+#### MongoDB Example
+
+```javascript
+// Optimistic concurrency control
+async function buyProduct(productId, userId) {
+  let success = false;
+  let retries = 0;
+  
+  while (!success && retries < 3) {
+    // Read current stock
+    const product = await db.products.findOne({ _id: productId });
+    
+    if (product.stock < 1) {
+      throw new Error('Out of stock');
+    }
+    
+    // Try to update only if stock hasn't changed
+    const result = await db.products.updateOne(
+      {
+        _id: productId,
+        stock: product.stock  // Only update if stock still same
+      },
+      {
+        $inc: { stock: -1 }
+      }
+    );
+    
+    if (result.modifiedCount === 1) {
+      success = true;
+    } else {
+      // Someone else bought it, retry
+      retries++;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  
+  if (!success) {
+    throw new Error('Failed to purchase after retries');
+  }
+}
+```
+
+#### Isolation Levels
+
+| Level | Dirty Read | Non-repeatable Read | Phantom Read | Performance |
+|-------|-----------|---------------------|--------------|-------------|
+| **Read Uncommitted** | ❌ Possible | ❌ Possible | ❌ Possible | ⚡⚡⚡ Fastest |
+| **Read Committed** (default) | ✅ Prevented | ❌ Possible | ❌ Possible | ⚡⚡ Fast |
+| **Repeatable Read** | ✅ Prevented | ✅ Prevented | ❌ Possible | ⚡ Slower |
+| **Serializable** | ✅ Prevented | ✅ Prevented | ✅ Prevented | 🐌 Slowest |
+
+**Dirty Read Example:**
+```sql
+-- Transaction A
+BEGIN;
+UPDATE products SET price = 10 WHERE id = 1;
+-- NOT committed yet!
+
+-- Transaction B (if Read Uncommitted allowed)
+SELECT price FROM products WHERE id = 1;
+-- Sees price = 10 (uncommitted data!)
+
+-- Transaction A
+ROLLBACK;  -- Oops! B saw temporary data!
+```
+
+**Non-repeatable Read Example:**
+```sql
+-- Transaction A
+BEGIN;
+SELECT balance FROM accounts WHERE id = 1;
+-- Returns: 100
+
+-- Transaction B (commits between A's reads)
+UPDATE accounts SET balance = 200 WHERE id = 1;
+COMMIT;
+
+-- Transaction A (same query, different result!)
+SELECT balance FROM accounts WHERE id = 1;
+-- Returns: 200 (changed!)
+```
+
+**Key Points:**
+- Higher isolation = More consistent but slower
+- Use SERIALIZABLE for financial transactions
+- Use READ COMMITTED for general queries
+- Locks prevent concurrent access
+
+---
+
+### 4. Durability 💾
+**"Once Committed, Data Survives Forever"**
+
+#### Real-Life Analogy
+**Signing a Contract**: Once you sign with permanent marker, it can't be erased, even if the building burns down (because there are copies in safe locations).
+
+#### SQL Example
+
+```sql
+-- ✅ Committed transactions are permanent
+BEGIN;
+  INSERT INTO orders (user_id, total, status)
+  VALUES (1, 100.00, 'pending');
+COMMIT;
+-- Data is now written to disk PERMANENTLY
+
+-- ⚡ Even if server crashes RIGHT NOW, order is safe!
+
+-- ❌ Uncommitted transactions are lost
+BEGIN;
+  INSERT INTO orders (user_id, total) VALUES (1, 100);
+-- ⚡ Server crashes here - LOST! Never committed!
+```
+
+#### How Databases Ensure Durability
+
+**1. Write-Ahead Logging (WAL)**
+```
+Transaction Process:
+1. Write to WAL (log file) FIRST  ← Fast, sequential write
+2. Mark as committed in WAL
+3. Eventually update actual database files  ← Slower, random write
+4. If crash occurs, replay WAL on restart
+
+PostgreSQL Example:
+- Transaction: INSERT INTO users ...
+- Step 1: Write to pg_wal/000001234  ← Immediate
+- Step 2: COMMIT recorded in WAL
+- Step 3: Update actual data files  ← Background process
+- If crash: Replay WAL entries to recover
+```
+
+**2. Replication**
+```
+Primary Server (Dhaka) ─┬→ Replica 1 (Chittagong)
+                        ├→ Replica 2 (Sylhet)
+                        └→ Replica 3 (Khulna)
+
+If Dhaka datacenter destroyed, data still safe!
+```
+
+**3. Backups**
+```
+Backup Strategy:
+- Full backup: Daily at 2 AM
+- Incremental: Every 6 hours
+- Transaction logs: Continuous
+- Retention: 30 days daily, 12 months monthly
+- Location: Different geographic regions
+```
+
+**Configuration Example (PostgreSQL):**
+
+```sql
+-- postgresql.conf
+
+-- WAL settings
+wal_level = replica
+fsync = on  -- Force writes to disk (slower but durable)
+synchronous_commit = on  -- Wait for WAL before returning
+
+-- Without these, committed transactions might be lost!
+```
+
+**Key Points:**
+- Committed data survives power failure, crash, or disaster
+- Achieved through WAL, replication, backups
+- Trade-off: Waiting for disk writes makes COMMIT slower
+- Essential for databases
+
+---
+
+### ACID Summary Table
+
+| Property | Question | Real-Life Example | Database Example |
+|----------|----------|------------------|------------------|
+| **Atomicity** | All or nothing? | ATM: Deduct money AND dispense cash | Bank transfer: Both accounts updated or neither |
+| **Consistency** | Rules followed? | Chess: Pieces move by rules | Balance can't be negative |
+| **Isolation** | No interference? | Theater: Two people can't book same seat | Two users can't buy last item twice |
+| **Durability** | Survives crashes? | Signed contract survives fire | Committed order survives power failure |
+
+**ACID Trade-offs:**
+- ✅ Safety: Data integrity guaranteed
+- ❌ Speed: Slower than "eventual consistency"
+- ✅ Simplicity: Easier to reason about
+- ❌ Scalability: Harder to scale horizontally
+
+**When ACID is Critical:**
+- Banking and finance
+- E-commerce payments
+- Healthcare records
+- Anything involving money or legal data
+
+**When Eventual Consistency is OK:**
+- Social media likes/follows
+- Product view counts
+- Analytics and logs
+- Recommendation systems
+
+---
+
+## Database Selection Guide
+
+### Step-by-Step Selection Process
+
+#### Step 1: Analyze Requirements
+
+Ask these questions:
+
+**1. Data Structure**
+- Fixed schema or evolving?
+- Simple or complex relationships?
+- Hierarchical or flat?
+
+**2. Scale**
+- How much data? (MB, GB, TB, PB)
+- How many users? (hundreds, thousands, millions)
+- Growth rate? (stable, doubling yearly)
+
+**3. Operations**
+- Read-heavy or write-heavy?
+- Reads per second?
+- Writes per second?
+
+**4. Consistency**
+- Must be immediate (strong) or eventual OK?
+- ACID transactions required?
+
+**5. Queries**
+- Simple lookups by ID?
+- Complex JOINs and aggregations?
+- Full-text search?
+
+**6. Budget & Team**
+- Cloud or self-hosted?
+- Team expertise?
+- Operational complexity acceptable?
+
+---
+
+#### Step 2: Decision Tree
+
+```
+START: Choose Your Database
+│
+├─ Need ACID transactions? (banking, payments)
+│  ├─ YES → SQL
+│  │   ├─ Complex queries → PostgreSQL
+│  │   └─ Simple queries → MySQL
+│  └─ NO → Continue
+│
+├─ Data structure changing frequently?
+│  ├─ YES → NoSQL (MongoDB)
+│  └─ NO → Continue
+│
+├─ Need to scale to millions of users?
+│  ├─ YES → NoSQL
+│  │   ├─ Document storage → MongoDB
+│  │   ├─ Time-series/logs → Cassandra
+│  │   └─ Caching → Redis
+│  └─ NO → SQL (PostgreSQL)
+│
+├─ Complex relationships and JOINs?
+│  ├─ YES → PostgreSQL
+│  └─ NO → Continue
+│
+├─ Need caching or sessions?
+│  ├─ YES → Redis
+│  └─ NO → Continue
+│
+├─ Graph relationships? (social network)
+│  ├─ YES → Neo4j
+│  └─ NO → Continue
+│
+└─ Not sure?
+   └─ Start with PostgreSQL
+      (Can always add NoSQL later)
+```
+
+---
+
+#### Step 3: Common Use Cases
+
+| Use Case | Best Database(s) | Why |
+|----------|-----------------|-----|
+| **E-commerce** | PostgreSQL + Redis | ACID (orders/payments) + Fast cache (cart) |
+| **Social Media** | PostgreSQL + Neo4j + Redis | Users (SQL) + Relationships (Graph) + Sessions (Redis) |
+| **Blog/CMS** | MongoDB or PostgreSQL | Flexible content (Mongo) OR Structured (Postgres) |
+| **Analytics** | Cassandra or ClickHouse | Write-heavy, time-series data |
+| **Real-time Gaming** | Redis + Cassandra | Low latency (Redis) + Event storage (Cassandra) |
+| **IoT Sensors** | TimescaleDB or InfluxDB | Optimized for time-series |
+| **Search Engine** | Elasticsearch | Full-text search, autocomplete |
+| **Banking** | PostgreSQL or Oracle | ACID, strong consistency, proven reliability |
+
+---
+
+### Why PostgreSQL vs MySQL vs MongoDB?
+
+#### PostgreSQL vs MySQL
+
+**Choose PostgreSQL when:**
+```
+✅ Complex applications (e-commerce, CRM, ERP)
+✅ Need advanced features (JSON, arrays, full-text search)
+✅ Strong consistency critical (financial data)
+✅ Complex queries and analytics
+✅ Future-proof (active development)
+```
+
+**Choose MySQL when:**
+```
+✅ Simple CRUD operations
+✅ Read-heavy workloads
+✅ Easier learning curve
+✅ Existing ecosystem (WordPress, etc.)
+✅ Fast replication setup
+```
+
+#### PostgreSQL vs MongoDB
+
+**Choose PostgreSQL when:**
+```
+✅ Financial transactions (banking, payments)
+✅ Complex relationships (orders ↔ users ↔ products)
+✅ ACID transactions required
+✅ Team knows SQL
+✅ Data integrity critical
+```
+
+**Choose MongoDB when:**
+```
+✅ Rapid prototyping (schema changes frequently)
+✅ Horizontal scaling required
+✅ Document-oriented data (catalogs, CMS)
+✅ Flexible schema (each record different)
+✅ High-volume simple queries
+```
+
+---
+
+### Decision Matrix
+
+| Factor | PostgreSQL | MySQL | MongoDB | Redis |
+|--------|-----------|-------|---------|-------|
+| **ACID** | ✅ Full | ✅ Full (InnoDB) | ⚠️ Limited | ❌ No |
+| **Schema** | 🔒 Fixed | 🔒 Fixed | 🔓 Flexible | 🔓 Flexible |
+| **Scaling** | ⬆️ Vertical | ⬆️ Vertical | ➡️ Horizontal | ➡️ Horizontal |
+| **Complex Queries** | ✅ Excellent | ✅ Good | ⚠️ Limited | ❌ No |
+| **Speed** | ⚡⚡ Fast | ⚡⚡⚡ Faster reads | ⚡⚡ Fast | ⚡⚡⚡ Fastest |
+| **Learning Curve** | ⚠️ Steep | ✅ Gentle | ✅ Moderate | ✅ Easy |
+| **Use Case** | General purpose | Web apps | CMS, catalogs | Caching |
+
+---
+
+### Real-World Architecture Example
+
+**E-Commerce Platform:**
+
+```
+┌────────────── Application ─────────────┐
+│                                        │
+│  ┌──────────────┐  ┌──────────────┐    │
+│  │ PostgreSQL   │  │    Redis     │    │
+│  │              │  │              │    │
+│  │ • Users      │  │ • Sessions   │    │
+│  │ • Orders     │  │ • Cart       │    │
+│  │ • Payments   │  │ • Cache      │    │
+│  │ • Products   │  │ • Trending   │    │
+│  │              │  │              │    │
+│  │ Strong       │  │ Fast         │    │
+│  │ Consistency  │  │ Temporary    │    │
+│  └──────────────┘  └──────────────┘    │
+│                                        │
+│  ┌──────────────────────────────────┐  │
+│  │      Elasticsearch               │  │
+│  │      • Product search            │  │
+│  │      • Filters & facets          │  │
+│  │      • Autocomplete              │  │
+│  └──────────────────────────────────┘  │
+└────────────────────────────────────────┘
+```
+
+**Why this architecture:**
+- **PostgreSQL**: Orders and payments need ACID
+- **Redis**: Shopping cart is temporary, needs speed
+- **Elasticsearch**: Product search needs full-text capabilities
+
+---
