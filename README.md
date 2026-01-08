@@ -64,16 +64,16 @@
 
 ---
 
-### [3. NoSQL Deep Dive](./03_nosql_deep_dive.md)
+### [3. NoSQL Deep Dive](./sections/03_nosql_deep_dive.md)
 **MongoDB and Redis operations, patterns, and best practices**
 
-- 3.1 MongoDB Operations
+- [3.1 MongoDB](./sections/03_01_mongodb.md)
   - 3.1.1 CRUD Operations
   - 3.1.2 Embedded vs Referenced Documents
   - 3.1.3 Aggregation Pipeline
   - 3.1.4 Schema Design Patterns
   - 3.1.5 Indexing in MongoDB
-- 3.2 Redis Operations
+- [3.2 Redis](./sections/03_02_redis.md)
   - 3.2.1 Data Structures (String, Hash, List, Set, Sorted Set)
   - 3.2.2 Caching Patterns
   - 3.2.3 Pub/Sub Messaging
@@ -82,7 +82,7 @@
 
 ---
 
-### [4. Performance & Optimization](./04_performance.md)
+### [4. Performance & Optimization](./sections/04_performance.md)
 **Indexing strategies, query optimization, and caching**
 
 - 4.1 Indexing Strategies
@@ -102,7 +102,7 @@
 
 ---
 
-### [5. Scaling & High Availability](./05_scaling.md)
+### [5. Scaling & High Availability](./sections/05_scaling.md)
 **Replication, sharding, and distributed systems**
 
 - 5.1 Vertical vs Horizontal Scaling
@@ -120,7 +120,7 @@
 
 ---
 
-### [6. Production Best Practices](./06_production.md)
+### [6. Production Best Practices](./sections/06_production.md)
 **Security, monitoring, backup, and testing**
 
 - 6.1 Database Security
@@ -145,7 +145,7 @@
 
 ---
 
-### [7. Real-World Projects](./07_projects.md)
+### [7. Real-World Projects](./sections/07_projects.md)
 **Complete implementations with SQL and NoSQL**
 
 - 7.1 E-Commerce Platform (PostgreSQL)
@@ -165,7 +165,7 @@
 
 ---
 
-### [8. Interview Preparation](./08_interview_prep.md)
+### [8. Interview Preparation](./sections/08_interview_prep.md)
 **Common questions, memory tricks, and quick reference**
 
 - 8.1 Memory Tips & Mnemonics
@@ -322,4 +322,4 @@ Feel free to:
 
 **Let's master databases together!** 🚀
 
-Start with [Chapter 1: Fundamentals](./01_fundamentals.md)
+Start with [Chapter 1: Fundamentals](./sections/01_fundamentals.md)
