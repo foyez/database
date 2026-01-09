@@ -2426,3 +2426,1222 @@ db.messages.find({ senderId: "user-123" })
 
 ---
 
+## 5.3.3 Challenges & Solutions
+
+### Challenge 1: Joins Across Shards
+
+**Problem:** Data needed for join is on different shards.
+
+```javascript
+// Users sharded by userId
+// Orders sharded by orderId
+
+// This query needs data from multiple shards
+db.orders.aggregate([
+  {
+    $lookup: {
+      from: "users",
+      localField: "userId",
+      foreignField: "_id",
+      as: "user"
+    }
+  }
+]);
+// Extremely slow - mongos must coordinate across shards
+```
+
+**Solutions:**
+
+**Solution 1: Denormalize Data**
+```javascript
+// Store user info in order (no join needed)
+{
+  _id: ObjectId("order-1"),
+  orderId: "ORD-001",
+  userId: ObjectId("user-123"),
+  
+  // Denormalized user data
+  userName: "Alice Johnson",
+  userEmail: "alice@example.com",
+  
+  items: [...],
+  total: 99.99
+}
+
+// Query is fast (single shard, no join)
+db.orders.find({ orderId: "ORD-001" });
+```
+
+**Solution 2: Co-locate Related Data (Same Shard Key)**
+```javascript
+// Shard both collections by userId
+sh.shardCollection("mydb.users", { userId: 1 });
+sh.shardCollection("mydb.orders", { userId: 1 });
+
+// Now user and their orders are on SAME shard
+db.orders.aggregate([
+  { $match: { userId: ObjectId("user-123") } },
+  {
+    $lookup: {
+      from: "users",
+      localField: "userId",
+      foreignField: "_id",
+      as: "user"
+    }
+  }
+]);
+// Fast - all data on one shard!
+```
+
+**Solution 3: Application-Level Join**
+```javascript
+// Query shards separately, join in application
+async function getOrdersWithUsers(orderIds) {
+  // Step 1: Get orders
+  const orders = await db.orders.find({ 
+    _id: { $in: orderIds } 
+  }).toArray();
+  
+  // Step 2: Get unique user IDs
+  const userIds = [...new Set(orders.map(o => o.userId))];
+  
+  // Step 3: Get users
+  const users = await db.users.find({ 
+    _id: { $in: userIds } 
+  }).toArray();
+  
+  // Step 4: Join in application
+  const userMap = new Map(users.map(u => [u._id.toString(), u]));
+  
+  return orders.map(order => ({
+    ...order,
+    user: userMap.get(order.userId.toString())
+  }));
+}
+```
+
+---
+
+### Challenge 2: Distributed Transactions
+
+**Problem:** Transaction spans multiple shards.
+
+```javascript
+// Transfer money between accounts on different shards
+// Account A on shard1, Account B on shard2
+
+// ❌ This won't work atomically across shards (in older MongoDB)
+session.startTransaction();
+db.accounts.updateOne({ _id: accountA }, { $inc: { balance: -100 } });
+db.accounts.updateOne({ _id: accountB }, { $inc: { balance: 100 } });
+session.commitTransaction();
+```
+
+**Solutions:**
+
+**Solution 1: MongoDB Multi-Document Transactions (4.0+)**
+```javascript
+// MongoDB 4.0+ supports multi-shard transactions
+const session = client.startSession();
+
+try {
+  await session.withTransaction(async () => {
+    // Deduct from account A (shard1)
+    await db.accounts.updateOne(
+      { _id: accountA },
+      { $inc: { balance: -100 } },
+      { session }
+    );
+    
+    // Add to account B (shard2)
+    await db.accounts.updateOne(
+      { _id: accountB },
+      { $inc: { balance: 100 } },
+      { session }
+    );
+  });
+  
+  console.log('Transaction successful');
+} catch (error) {
+  console.log('Transaction aborted');
+} finally {
+  await session.endSession();
+}
+```
+
+**Limitations:**
+- ❌ Performance impact (distributed coordination)
+- ❌ Higher latency than single-shard transactions
+- ⚠️ Use sparingly
+
+---
+
+**Solution 2: Two-Phase Commit (2PC) Pattern**
+
+```javascript
+// Manual implementation for eventual consistency
+async function transferMoney(fromAccount, toAccount, amount) {
+  const transactionId = new ObjectId();
+  
+  // Phase 1: Create pending transaction
+  await db.transactions.insertOne({
+    _id: transactionId,
+    from: fromAccount,
+    to: toAccount,
+    amount: amount,
+    state: 'pending',
+    createdAt: new Date()
+  });
+  
+  try {
+    // Phase 2: Deduct from source
+    await db.accounts.updateOne(
+      { _id: fromAccount, balance: { $gte: amount } },
+      { 
+        $inc: { balance: -amount },
+        $push: { 
+          transactions: { 
+            id: transactionId, 
+            amount: -amount, 
+            state: 'pending' 
+          } 
+        }
+      }
+    );
+    
+    // Phase 3: Add to destination
+    await db.accounts.updateOne(
+      { _id: toAccount },
+      { 
+        $inc: { balance: amount },
+        $push: { 
+          transactions: { 
+            id: transactionId, 
+            amount: amount, 
+            state: 'pending' 
+          } 
+        }
+      }
+    );
+    
+    // Phase 4: Mark transaction complete
+    await db.transactions.updateOne(
+      { _id: transactionId },
+      { 
+        $set: { 
+          state: 'committed',
+          completedAt: new Date()
+        } 
+      }
+    );
+    
+    return { success: true, transactionId };
+    
+  } catch (error) {
+    // Rollback: Mark as failed and compensate
+    await db.transactions.updateOne(
+      { _id: transactionId },
+      { $set: { state: 'failed', error: error.message } }
+    );
+    
+    // Compensation logic here
+    return { success: false, error: error.message };
+  }
+}
+
+// Background job: Clean up orphaned transactions
+async function cleanupOrphanedTransactions() {
+  const staleTransactions = await db.transactions.find({
+    state: 'pending',
+    createdAt: { $lt: new Date(Date.now() - 5 * 60 * 1000) }  // 5 min old
+  }).toArray();
+  
+  for (const txn of staleTransactions) {
+    // Rollback logic
+    await rollbackTransaction(txn._id);
+  }
+}
+```
+
+---
+
+**Solution 3: Saga Pattern (Eventual Consistency)**
+
+```javascript
+// Saga: Sequence of local transactions with compensation
+class TransferSaga {
+  async execute(fromAccount, toAccount, amount) {
+    const sagaId = new ObjectId();
+    const steps = [];
+    
+    try {
+      // Step 1: Reserve amount from source
+      await this.reserveAmount(fromAccount, amount);
+      steps.push({ action: 'reserve', account: fromAccount });
+      
+      // Step 2: Transfer to destination
+      await this.addAmount(toAccount, amount);
+      steps.push({ action: 'add', account: toAccount });
+      
+      // Step 3: Confirm reservation
+      await this.confirmReservation(fromAccount, amount);
+      steps.push({ action: 'confirm', account: fromAccount });
+      
+      return { success: true, sagaId };
+      
+    } catch (error) {
+      // Compensate in reverse order
+      for (let i = steps.length - 1; i >= 0; i--) {
+        await this.compensate(steps[i]);
+      }
+      
+      return { success: false, error: error.message };
+    }
+  }
+  
+  async reserveAmount(accountId, amount) {
+    await db.accounts.updateOne(
+      { _id: accountId, balance: { $gte: amount } },
+      { 
+        $inc: { reserved: amount },
+        $set: { updatedAt: new Date() }
+      }
+    );
+  }
+  
+  async addAmount(accountId, amount) {
+    await db.accounts.updateOne(
+      { _id: accountId },
+      { $inc: { balance: amount } }
+    );
+  }
+  
+  async confirmReservation(accountId, amount) {
+    await db.accounts.updateOne(
+      { _id: accountId },
+      { 
+        $inc: { reserved: -amount, balance: -amount }
+      }
+    );
+  }
+  
+  async compensate(step) {
+    switch (step.action) {
+      case 'reserve':
+        await db.accounts.updateOne(
+          { _id: step.account },
+          { $inc: { reserved: -step.amount } }
+        );
+        break;
+      case 'add':
+        await db.accounts.updateOne(
+          { _id: step.account },
+          { $inc: { balance: -step.amount } }
+        );
+        break;
+    }
+  }
+}
+```
+
+---
+
+### Challenge 3: Hotspots (Unbalanced Load)
+
+**Problem:** One shard receives disproportionate traffic.
+
+```javascript
+// Celebrity user with millions of followers
+// All their posts on ONE shard (sharded by userId)
+
+// Shard distribution:
+// Shard 1: 100,000 req/sec (celebrity user) 💥
+// Shard 2: 1,000 req/sec
+// Shard 3: 1,000 req/sec
+```
+
+**Solutions:**
+
+**Solution 1: Hash Shard Key**
+```javascript
+// Instead of range-based (userId), use hash
+sh.shardCollection("mydb.posts", { userId: "hashed" });
+
+// Celebrity's posts distributed across shards
+// More even load
+```
+
+**Solution 2: Compound Shard Key with High Cardinality**
+```javascript
+// Add timestamp to shard key
+sh.shardCollection("mydb.posts", { 
+  userId: 1, 
+  createdAt: 1 
+});
+
+// Celebrity's posts split by time across shards
+```
+
+**Solution 3: Application-Level Caching**
+```javascript
+// Cache celebrity content aggressively
+async function getPost(postId, userId) {
+  const cacheKey = `post:${postId}`;
+  
+  // Check if user is celebrity (high follower count)
+  const isCelebrity = await isCelebrityUser(userId);
+  
+  if (isCelebrity) {
+    // Cache for 1 hour (longer TTL)
+    const cached = await redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+    
+    const post = await db.posts.findOne({ _id: postId });
+    await redis.setex(cacheKey, 3600, JSON.stringify(post));
+    return post;
+  } else {
+    // Regular cache (5 minutes)
+    return await getCachedPost(postId, 300);
+  }
+}
+```
+
+**Solution 4: Read Replicas for Hot Shards**
+```javascript
+// Add more replicas to hot shard
+// Shard 1 (hot): 1 primary + 5 secondaries
+// Shard 2: 1 primary + 2 secondaries
+// Shard 3: 1 primary + 2 secondaries
+
+// Distribute reads across more replicas for hot shard
+```
+
+---
+
+### Challenge 4: Resharding (Changing Shard Key)
+
+**Problem:** Original shard key no longer optimal.
+
+**Solution (MongoDB 5.0+): Reshard Collection**
+
+```javascript
+// Change shard key (MongoDB 5.0+)
+db.adminCommand({
+  reshardCollection: "mydb.users",
+  key: { newField: "hashed" }
+});
+
+// MongoDB handles data migration automatically
+```
+
+**Solution (Manual Migration):**
+
+```javascript
+// 1. Create new collection with new shard key
+sh.shardCollection("mydb.users_new", { newField: "hashed" });
+
+// 2. Copy data (in batches)
+const batchSize = 1000;
+let skip = 0;
+
+while (true) {
+  const batch = await db.users.find()
+    .skip(skip)
+    .limit(batchSize)
+    .toArray();
+  
+  if (batch.length === 0) break;
+  
+  await db.users_new.insertMany(batch);
+  skip += batchSize;
+}
+
+// 3. Switch application to new collection
+// 4. Drop old collection
+db.users.drop();
+
+// 5. Rename new collection
+db.users_new.renameCollection("users");
+```
+
+---
+
+## 5.4 Connection Pooling
+
+### Why Connection Pooling?
+
+**Without Pooling:**
+```javascript
+// Every request creates new connection
+app.get('/users', async (req, res) => {
+  const client = new MongoClient(url);
+  await client.connect();  // Expensive! (~100ms)
+  
+  const users = await client.db().collection('users').find().toArray();
+  
+  await client.close();
+  res.json(users);
+});
+
+// 100 requests = 100 connections = 10 seconds overhead!
+```
+
+**With Pooling:**
+```javascript
+// Reuse existing connections
+const pool = new MongoClient(url, { maxPoolSize: 50 });
+await pool.connect();  // Once at startup
+
+app.get('/users', async (req, res) => {
+  // Reuse connection from pool (~1ms)
+  const users = await pool.db().collection('users').find().toArray();
+  res.json(users);
+});
+
+// 100 requests = 100ms overhead (100x faster!)
+```
+
+---
+
+### PostgreSQL Connection Pooling
+
+**Using pg-pool:**
+
+```javascript
+const { Pool } = require('pg');
+
+const pool = new Pool({
+  host: 'localhost',
+  database: 'mydb',
+  user: 'postgres',
+  password: 'password',
+  
+  // Pool configuration
+  max: 20,              // Max connections
+  min: 5,               // Min connections (kept open)
+  idleTimeoutMillis: 30000,  // Close idle after 30s
+  connectionTimeoutMillis: 2000,  // Wait 2s for connection
+});
+
+// Query (automatically uses pool)
+const result = await pool.query('SELECT * FROM users WHERE id = $1', [123]);
+
+// Explicit client checkout (for transactions)
+const client = await pool.connect();
+try {
+  await client.query('BEGIN');
+  await client.query('INSERT INTO users ...');
+  await client.query('UPDATE accounts ...');
+  await client.query('COMMIT');
+} catch (error) {
+  await client.query('ROLLBACK');
+  throw error;
+} finally {
+  client.release();  // Return to pool
+}
+```
+
+---
+
+### MongoDB Connection Pooling
+
+```javascript
+const { MongoClient } = require('mongodb');
+
+const client = new MongoClient(url, {
+  maxPoolSize: 50,          // Max connections
+  minPoolSize: 10,          // Min connections
+  maxIdleTimeMS: 30000,     // Close idle after 30s
+  waitQueueTimeoutMS: 5000, // Wait 5s for available connection
+  
+  // Monitoring
+  monitorCommands: true
+});
+
+await client.connect();
+
+// Pool events
+client.on('connectionPoolCreated', (event) => {
+  console.log('Pool created:', event);
+});
+
+client.on('connectionCheckedOut', (event) => {
+  console.log('Connection checked out');
+});
+
+client.on('connectionCheckedIn', (event) => {
+  console.log('Connection returned to pool');
+});
+
+// Query (uses pool automatically)
+const users = await client.db('mydb').collection('users').find().toArray();
+```
+
+---
+
+### Connection Pool Sizing
+
+**Formula:**
+```
+Pool Size = (Core Count × 2) + Effective Spindle Count
+
+Examples:
+- 4 cores, SSD → (4 × 2) + 1 = 9 connections
+- 8 cores, SSD → (8 × 2) + 1 = 17 connections
+- 16 cores, RAID → (16 × 2) + 10 = 42 connections
+```
+
+**Guidelines:**
+- **Too small:** Requests wait for connections (slow)
+- **Too large:** Database overload, memory waste
+- **Start conservative:** 10-20 connections
+- **Monitor and adjust:** Based on load
+
+---
+
+### External Connection Poolers
+
+**PgBouncer (PostgreSQL):**
+
+```ini
+# pgbouncer.ini
+[databases]
+mydb = host=localhost dbname=mydb
+
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = 6432
+auth_type = md5
+auth_file = /etc/pgbouncer/userlist.txt
+
+# Pool modes:
+pool_mode = transaction  # Connection per transaction (recommended)
+# pool_mode = session    # Connection per session (default)
+# pool_mode = statement  # Connection per statement (rare)
+
+max_client_conn = 1000   # Max client connections
+default_pool_size = 25   # Connections per database
+```
+
+**Benefits:**
+- ✅ Handles 1000s of client connections
+- ✅ Actual DB connections: Only 25
+- ✅ Reduces database load
+- ✅ Connection reuse across clients
+
+---
+
+## 5.5 Load Balancing
+
+### What is Load Balancing?
+
+**Definition:** Distribute traffic across multiple servers.
+
+```
+           ┌──────────────┐
+Clients ───│ Load Balancer│
+           └──────┬───────┘
+                  │
+      ┌───────────┼───────────┐
+      ▼           ▼           ▼
+  ┌──────┐    ┌──────┐    ┌──────┐
+  │Server│    │Server│    │Server│
+  │  1   │    │  2   │    │  3   │
+  └──────┘    └──────┘    └──────┘
+```
+
+---
+
+### Load Balancing Algorithms
+
+#### 1. Round Robin
+
+```javascript
+class RoundRobinBalancer {
+  constructor(servers) {
+    this.servers = servers;
+    this.current = 0;
+  }
+  
+  getNextServer() {
+    const server = this.servers[this.current];
+    this.current = (this.current + 1) % this.servers.length;
+    return server;
+  }
+}
+
+// Usage
+const lb = new RoundRobinBalancer([
+  'server1.example.com',
+  'server2.example.com',
+  'server3.example.com'
+]);
+
+console.log(lb.getNextServer());  // server1
+console.log(lb.getNextServer());  // server2
+console.log(lb.getNextServer());  // server3
+console.log(lb.getNextServer());  // server1 (cycles)
+```
+
+**Pros:** ✅ Simple, even distribution
+**Cons:** ❌ Ignores server load
+
+---
+
+#### 2. Least Connections
+
+```javascript
+class LeastConnectionsBalancer {
+  constructor(servers) {
+    this.servers = servers.map(server => ({
+      url: server,
+      connections: 0
+    }));
+  }
+  
+  getNextServer() {
+    // Find server with fewest connections
+    const server = this.servers.reduce((min, curr) => 
+      curr.connections < min.connections ? curr : min
+    );
+    
+    server.connections++;
+    return server.url;
+  }
+  
+  releaseConnection(serverUrl) {
+    const server = this.servers.find(s => s.url === serverUrl);
+    if (server) server.connections--;
+  }
+}
+
+// Usage
+const lb = new LeastConnectionsBalancer([...servers]);
+const server = lb.getNextServer();
+// ... use connection
+lb.releaseConnection(server);
+```
+
+**Pros:** ✅ Accounts for server load
+**Cons:** ❌ More complex
+
+---
+
+#### 3. Weighted Round Robin
+
+```javascript
+class WeightedRoundRobinBalancer {
+  constructor(servers) {
+    // servers: [{ url, weight }, ...]
+    this.servers = [];
+    
+    // Expand based on weights
+    servers.forEach(server => {
+      for (let i = 0; i < server.weight; i++) {
+        this.servers.push(server.url);
+      }
+    });
+    
+    this.current = 0;
+  }
+  
+  getNextServer() {
+    const server = this.servers[this.current];
+    this.current = (this.current + 1) % this.servers.length;
+    return server;
+  }
+}
+
+// Usage: More powerful server gets more traffic
+const lb = new WeightedRoundRobinBalancer([
+  { url: 'server1.example.com', weight: 3 },  // 3x traffic
+  { url: 'server2.example.com', weight: 2 },  // 2x traffic
+  { url: 'server3.example.com', weight: 1 }   // 1x traffic
+]);
+```
+
+**Pros:** ✅ Accounts for server capacity
+**Cons:** ❌ Static weights
+
+---
+
+#### 4. IP Hash (Session Affinity)
+
+```javascript
+class IPHashBalancer {
+  constructor(servers) {
+    this.servers = servers;
+  }
+  
+  hash(ip) {
+    let hash = 0;
+    for (let i = 0; i < ip.length; i++) {
+      hash = ((hash << 5) - hash) + ip.charCodeAt(i);
+      hash = hash & hash;
+    }
+    return Math.abs(hash);
+  }
+  
+  getServerForIP(clientIP) {
+    const hash = this.hash(clientIP);
+    const index = hash % this.servers.length;
+    return this.servers[index];
+  }
+}
+
+// Usage: Same client always goes to same server
+const lb = new IPHashBalancer([...servers]);
+console.log(lb.getServerForIP('192.168.1.100'));  // server2
+console.log(lb.getServerForIP('192.168.1.100'));  // server2 (always)
+console.log(lb.getServerForIP('192.168.1.101'));  // server1
+```
+
+**Pros:** ✅ Session persistence (sticky sessions)
+**Cons:** ❌ Uneven distribution
+
+---
+
+### Database Load Balancing
+
+**HAProxy Configuration (PostgreSQL):**
+
+```
+# haproxy.cfg
+global
+    maxconn 4096
+
+defaults
+    mode tcp
+    timeout connect 5s
+    timeout client 50s
+    timeout server 50s
+
+# PostgreSQL primary (writes)
+frontend postgres_primary
+    bind *:5432
+    default_backend postgres_primary_backend
+
+backend postgres_primary_backend
+    server primary primary-db.example.com:5432 check
+
+# PostgreSQL replicas (reads)
+frontend postgres_replicas
+    bind *:5433
+    default_backend postgres_replicas_backend
+
+backend postgres_replicas_backend
+    balance roundrobin
+    server replica1 replica1-db.example.com:5432 check
+    server replica2 replica2-db.example.com:5432 check
+    server replica3 replica3-db.example.com:5432 check
+```
+
+**Application Code:**
+
+```javascript
+const primaryPool = new Pool({
+  host: 'haproxy.example.com',
+  port: 5432  // Primary (writes)
+});
+
+const replicaPool = new Pool({
+  host: 'haproxy.example.com',
+  port: 5433  // Replicas (reads)
+});
+
+// Write
+await primaryPool.query('INSERT INTO users ...');
+
+// Read (distributed across replicas by HAProxy)
+await replicaPool.query('SELECT * FROM users WHERE ...');
+```
+
+---
+
+## 5.6 CAP Theorem
+
+### The CAP Theorem
+
+**Definition:** In a distributed system, you can only have 2 of 3:
+
+- **C**onsistency: All nodes see same data
+- **A**vailability: System always responds
+- **P**artition Tolerance: Works despite network failures
+
+```
+     Consistency
+         /\
+        /  \
+       /    \
+      /  CA  \
+     /________\
+    /    |     \
+   / CP  |  AP  \
+  /______|_______\
+Partition     Availability
+Tolerance
+```
+
+---
+
+### Understanding with Examples
+
+#### CA (Consistency + Availability)
+
+**Example:** Traditional single-server database
+
+```
+Client → [Single Database] → Always consistent, always available
+
+BUT: No partition tolerance
+- If server fails → System down
+- Not distributed → No P
+```
+
+**Real Systems:**
+- PostgreSQL (single instance)
+- MySQL (single instance)
+
+**Trade-off:** ❌ No fault tolerance
+
+---
+
+#### CP (Consistency + Partition Tolerance)
+
+**Example:** MongoDB with majority write concern
+
+```
+Client → [Primary] ← Replicates → [Secondary 1]
+                                  [Secondary 2]
+
+Network partition occurs:
+Primary isolated from secondaries
+
+Result:
+- Primary refuses writes (can't reach majority) ← Unavailable
+- Ensures consistency (no split brain)
+- Partition tolerant
+```
+
+**Real Systems:**
+- HBase
+- MongoDB (w: 'majority')
+- Redis Cluster
+- Zookeeper
+
+**Trade-off:** ❌ May become unavailable during partitions
+
+---
+
+#### AP (Availability + Partition Tolerance)
+
+**Example:** Cassandra
+
+```
+Client → [Node 1] ← Eventually → [Node 2]
+         [Node 2]    consistent  [Node 3]
+
+Network partition occurs:
+Nodes 1-2 isolated from Node 3
+
+Result:
+- All nodes still accept writes ← Available
+- Data eventually consistent ← May be temporarily inconsistent
+- Partition tolerant
+```
+
+**Real Systems:**
+- Cassandra
+- DynamoDB
+- Riak
+- CouchDB
+
+**Trade-off:** ❌ Temporary inconsistency
+
+---
+
+### CAP Theorem Decision Guide
+
+```
+Choose based on requirements:
+
+Need strong consistency? (Financial, Inventory)
+├─ Single datacenter → CA (PostgreSQL)
+└─ Multi-datacenter → CP (MongoDB w: majority)
+
+Need high availability? (Social media, Analytics)
+└─ AP (Cassandra, DynamoDB)
+
+Typical choices:
+- Banking → CP (consistency critical)
+- E-commerce → CP for orders, AP for catalog
+- Social media → AP (eventual consistency OK)
+- Analytics → AP (availability + eventual consistency)
+```
+
+---
+
+### Real-World Example: E-Commerce
+
+```javascript
+// Product Catalog (AP)
+// - Cassandra (availability + partition tolerance)
+// - Eventual consistency OK (price updates can lag slightly)
+const catalog = cassandraClient.query(
+  'SELECT * FROM products WHERE category = ?',
+  ['electronics']
+);
+
+// Shopping Cart (CP)
+// - MongoDB with majority write concern
+// - Consistency critical (can't lose cart items)
+const cart = await mongoClient.db('shop').collection('carts').findOne(
+  { userId: 'user-123' },
+  { readConcern: { level: 'majority' } }
+);
+
+// Order Processing (CP)
+// - PostgreSQL (ACID transactions)
+// - Strong consistency required
+await pgPool.query('BEGIN');
+await pgPool.query('INSERT INTO orders ...');
+await pgPool.query('UPDATE inventory ...');
+await pgPool.query('COMMIT');
+
+// Analytics (AP)
+// - Elasticsearch
+// - Eventual consistency acceptable
+const analytics = await esClient.search({
+  index: 'orders',
+  body: {
+    query: { range: { date: { gte: '2024-01-01' } } },
+    aggs: { total_revenue: { sum: { field: 'amount' } } }
+  }
+});
+```
+
+---
+
+### Practice Questions: CAP Theorem
+
+#### Multiple Choice
+
+**Q1: Which system prioritizes availability over consistency?**
+
+A) PostgreSQL single instance
+B) MongoDB with w: 'majority'
+C) Cassandra
+D) Single Redis server
+
+<details>
+<summary><strong>View Answer</strong></summary>
+
+**Answer: C - Cassandra**
+
+Explanation: Cassandra is an AP system that prioritizes availability and partition tolerance, accepting eventual consistency.
+
+</details>
+
+---
+
+**Q2: A banking system requires strong consistency and must work across multiple datacenters. Which CAP combination should it choose?**
+
+A) CA
+B) CP
+C) AP
+D) All three
+
+<details>
+<summary><strong>View Answer</strong></summary>
+
+**Answer: B - CP**
+
+Explanation: Banking requires strong consistency (C) and must handle network partitions across datacenters (P). It can tolerate temporary unavailability during partitions to ensure consistency.
+
+</details>
+
+---
+
+## Chapter Summary
+
+### Key Concepts Covered
+
+#### 5.1 Vertical vs Horizontal Scaling
+
+**Vertical (Scale Up):**
+- Add resources to single server
+- Simple but limited
+- Expensive at scale
+- Single point of failure
+
+**Horizontal (Scale Out):**
+- Add more servers
+- Complex but unlimited
+- Cost-effective
+- High availability
+
+**Best Practice:** Hybrid approach
+
+---
+
+#### 5.2 Replication (Read Scaling)
+
+**SQL Replication:**
+- PostgreSQL: Streaming (physical), Logical (table-level)
+- MySQL: Master-slave, Group replication
+- Read/write split for scaling
+
+**MongoDB Replica Sets:**
+- Minimum 3 members
+- Automatic failover (<10 seconds)
+- 5 read preferences
+- Write concerns (w: 1, w: 'majority')
+
+**Replication Lag:**
+- Causes: Network latency, load, distance
+- Consistency models: Strong, Eventual, Read-after-write
+- Solutions: Staleness windows, primary routing, versions
+
+---
+
+#### 5.3 Sharding (Write Scaling)
+
+**Sharding Strategies:**
+1. **Range-based:** Partition by ranges (hotspots possible)
+2. **Hash-based:** Even distribution (range queries slow)
+3. **Geographic/Directory:** Data locality (uneven distribution)
+4. **Consistent hashing:** Minimal data movement (complex)
+
+**MongoDB Sharding:**
+- Components: mongos, config servers, shards
+- Shard key selection: High cardinality, even distribution, non-monotonic
+- Targeted vs broadcast queries
+- Chunk balancing
+
+**Challenges:**
+- Cross-shard joins → Denormalize or co-locate
+- Distributed transactions → Use MongoDB 4.0+, 2PC, or Saga
+- Hotspots → Hash keys, caching, more replicas
+- Resharding → MongoDB 5.0+ or manual migration
+
+---
+
+#### 5.4 Connection Pooling
+
+**Benefits:**
+- Reuse connections (100x faster)
+- Reduce overhead
+- Control resource usage
+
+**Configuration:**
+- Size: (Cores × 2) + Spindles
+- Monitoring: Checkout/checkin events
+- External poolers: PgBouncer (PostgreSQL)
+
+---
+
+#### 5.5 Load Balancing
+
+**Algorithms:**
+1. Round Robin (simple, even)
+2. Least Connections (accounts for load)
+3. Weighted (server capacity)
+4. IP Hash (sticky sessions)
+
+**Database LB:**
+- HAProxy for PostgreSQL
+- Separate ports for primary/replicas
+- Application-aware routing
+
+---
+
+#### 5.6 CAP Theorem
+
+**Trade-offs:**
+- **CA:** Single server (PostgreSQL, MySQL)
+- **CP:** Consistency + Partition tolerance (MongoDB, HBase)
+- **AP:** Availability + Partition tolerance (Cassandra, DynamoDB)
+
+**Decision:**
+- Strong consistency → CP
+- High availability → AP
+- Single datacenter → CA
+
+---
+
+### Scaling Progression
+
+```
+Stage 1: Single Server (Vertical)
+- 1 database server
+- Optimize queries, add indexes, cache
+
+Stage 2: Read Scaling (Horizontal Reads)
+- 1 primary + N replicas
+- Read/write split
+- Connection pooling
+
+Stage 3: Geographic Distribution
+- Multi-region replicas
+- Load balancing
+- CDN for static content
+
+Stage 4: Write Scaling (Sharding)
+- Multiple shards
+- Each shard is replica set
+- mongos routing
+
+Stage 5: Full Distribution
+- Sharding + Replication
+- Multi-region shards
+- Advanced caching
+- Microservices
+```
+
+---
+
+### Performance Metrics
+
+| Technique | Read Scaling | Write Scaling | Availability |
+|-----------|--------------|---------------|--------------|
+| **Vertical Scaling** | ✅ 2-4x | ✅ 2-4x | ❌ Single point |
+| **Replication** | ✅ Nx (N replicas) | ❌ No improvement | ✅ Automatic failover |
+| **Sharding** | ✅ Nx (N shards) | ✅ Nx (N shards) | ✅ Shard-level fault tolerance |
+| **Caching** | ✅ 10-100x | ❌ No improvement | ✅ Reduces DB load |
+| **Connection Pooling** | ✅ 100x (overhead) | ✅ 100x (overhead) | ✅ Efficient resources |
+
+---
+
+### Best Practices
+
+**Scaling:**
+1. ✅ Start simple (vertical + caching)
+2. ✅ Add replication before sharding
+3. ✅ Monitor and measure before scaling
+4. ✅ Use hybrid approach
+5. ❌ Don't premature optimize
+
+**Replication:**
+1. ✅ Use read replicas for read-heavy workloads
+2. ✅ Monitor replication lag
+3. ✅ Use appropriate consistency model
+4. ✅ Automate failover
+5. ❌ Don't ignore lag in critical paths
+
+**Sharding:**
+1. ✅ Choose shard key carefully (hard to change)
+2. ✅ High cardinality, even distribution
+3. ✅ Denormalize for co-location
+4. ✅ Monitor shard balance
+5. ❌ Don't shard too early (adds complexity)
+
+**Connection Management:**
+1. ✅ Use connection pooling
+2. ✅ Size pools appropriately
+3. ✅ Monitor pool saturation
+4. ✅ Consider external poolers (PgBouncer)
+5. ❌ Don't create connections per request
+
+---
+
+**Next Chapter:** [Production Best Practices →](./sections/06_production.md)
