@@ -145,19 +145,19 @@
 
 ---
 
-### [7. Real-World Projects](./sections/07_projects.md)
+### 7. Real-World Projects
 **Complete implementations with SQL and NoSQL**
 
-- 7.1 E-Commerce Platform (PostgreSQL)
+- 7.1 [E-Commerce Platform (PostgreSQL)](sections/07_projects/01-e-commerce-platform.md)
   - 7.1.1 Requirements Analysis
   - 7.1.2 Schema Design
   - 7.1.3 Common Queries
   - 7.1.4 Transaction Examples
-- 7.2 Blog Platform (MongoDB)
+- [7.2 Blog Platform (MongoDB)](sections/07_projects/02-blog-platform.md)
   - 7.2.1 Document Model Design
   - 7.2.2 CRUD Operations
   - 7.2.3 Aggregation Queries
-- 7.3 Real-Time Gaming (Redis)
+- [7.3 Real-Time Gaming (Redis)](sections/07_projects/03-real-time-gaming.md)
   - 7.3.1 Leaderboard Implementation
   - 7.3.2 Session Management
   - 7.3.3 Rate Limiting

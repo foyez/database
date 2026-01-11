@@ -1,6 +1,8 @@
 # Chapter 1: Database Fundamentals
 **Core Concepts, Terminology, and Decision-Making**
 
+**Navigation:** [README](../README.md) | [Next: SQL Essentials: Relationships, JOINs, and Aggregations →](02_sql_essentials.md)
+
 ---
 
 ## Table of Contents
@@ -1136,4 +1138,4 @@ For each scenario, choose the best database and explain why:
 
 ---
 
-**Next Chapter:** [SQL Essentials: Relationships, JOINs, and Aggregations →](./sections/02_sql_essentials.md)
+**Navigation:** [README](../README.md) | [Next: SQL Essentials: Relationships, JOINs, and Aggregations →](02_sql_essentials.md)

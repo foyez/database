@@ -1,6 +1,8 @@
 # Chapter 2: SQL Essentials
 **Relationships, JOINs, Aggregations, and Advanced Queries**
 
+**Navigation:** [← Introduction](01_fundamentals.md) | [README](../README.md) | [Next: NoSQL Deep Dive: MongoDB →](03_01_mongodb.md)
+
 ---
 
 ## Table of Contents
@@ -2073,4 +2075,4 @@ SELECT * FROM products WHERE id = 1 FOR UPDATE;
 
 ---
 
-**Next Chapter:** [NoSQL Deep Dive: MongoDB and Redis →](./sections/03_nosql_deep_dive.md)
+**Navigation:** [← Introduction](01_fundamentals.md) | [README](../README.md) | [Next: NoSQL Deep Dive: MongoDB →](03_01_mongodb.md)

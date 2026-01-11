@@ -1,6 +1,8 @@
 # Chapter 3: NoSQL Deep Dive
 **Redis Operations, Patterns, and Best Practices**
 
+**Navigation:** [← NoSQL Deep Dive: Redis](03_01_redis.md) | [README](../README.md) | [Next: NoSQL Deep Dive: Redis →](03_01_redis.md)
+
 ---
 
 ## Table of Contents

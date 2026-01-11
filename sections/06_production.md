@@ -4430,4 +4430,4 @@ npx migrate-mongo down
 
 ---
 
-**Next Chapter:** [Real-World Projects →](./sections/07_projects.md)
+**Next Chapter:** [Real-World Projects →](./sections)

@@ -1,6 +1,8 @@
 # Chapter 3: NoSQL Deep Dive
 **MongoDB Operations, Patterns, and Best Practices**
 
+**Navigation:** [← SQL Essentials: Relationships, JOINs, and Aggregations](02_sql_essentials.md) | [README](../README.md) | [Next: NoSQL Deep Dive: Redis →](03_01_redis.md)
+
 ---
 
 ## Table of Contents
@@ -2237,39 +2239,4 @@ db.products.find({
 
 ---
 
-## MongoDB Summary
-
-**3.1.1 CRUD Operations:**
-- Create: insertOne(), insertMany()
-- Read: find(), findOne() with operators ($gt, $lt, $in, $exists)
-- Update: updateOne(), updateMany() with $set, $inc, $push, $addToSet
-- Delete: deleteOne(), deleteMany()
-- Real-world blog platform example
-
-**3.1.2 Embedded vs Referenced:**
-- **Embedded**: Data together, faster reads, 16MB limit
-- **Referenced**: Normalized, flexible, requires $lookup
-- **Decision**: Use hybrid approach for real-world applications
-- Orders example: embed customer snapshot, reference payment
-
-**3.1.3 Aggregation Pipeline:**
-- Stages: $match, $group, $project, $sort, $limit, $skip, $lookup, $unwind, $addFields
-- Accumulators: $sum, $avg, $min, $max, $first, $last, $push
-- Real-world: E-commerce sales reports, user analytics
-- Pipeline processes data through sequential transformations
-
-**3.1.4 Schema Design Patterns:**
-- **Attribute Pattern**: Sparse fields → key-value array
-- **Bucket Pattern**: Time-series → group readings into buckets
-- **Computed Pattern**: Expensive queries → pre-calculate stats
-- **Subset Pattern**: Large arrays → recent + full data split
-- **Extended Reference**: Frequent lookups → duplicate common fields
-
-**3.1.5 Indexing:**
-- Types: Single, Compound, Unique, Sparse, TTL, Text, Multikey
-- **ESR Rule**: Equality, Sort, Range (optimal compound index order)
-- Covered queries: All data from index (no document fetch)
-- Use explain() to analyze: IXSCAN (good) vs COLLSCAN (slow)
-- Index selectivity matters (unique email > binary gender)
-
----
+**Navigation:** [← SQL Essentials: Relationships, JOINs, and Aggregations](02_sql_essentials.md) | [README](../README.md) | [Next: NoSQL Deep Dive: Redis →](03_01_redis.md)
