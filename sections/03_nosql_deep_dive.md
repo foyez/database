@@ -4,8 +4,8 @@
 ---
 
 ## Table of Contents
-- [3.1 MongoDB](./sections/03_01_mongodb.md)
-- [3.2 Redis](./sections/03_02_redis.md)
+- [3.1 MongoDB](03_01_mongodb.md)
+- [3.2 Redis](03_02_redis.md)
 
 ---
 
@@ -197,4 +197,4 @@ db.posts.aggregate([
 
 ---
 
-**Next Chapter:** [Performance & Optimization →](./sections/04_performance.md)
+**Next Chapter:** [Performance & Optimization →](04_performance.md)

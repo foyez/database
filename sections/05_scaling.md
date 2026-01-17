@@ -3644,4 +3644,4 @@ Stage 5: Full Distribution
 
 ---
 
-**Next Chapter:** [Production Best Practices →](./sections/06_production.md)
+**Next Chapter:** [Production Best Practices →](06_production.md)

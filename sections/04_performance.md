@@ -4079,4 +4079,4 @@ if (!results) {
 
 ---
 
-**Next Chapter:** [Scaling & High Availability →](./sections/05_scaling.md)
+**Next Chapter:** [Scaling & High Availability →](05_scaling.md)
