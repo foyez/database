@@ -1,32 +1,28 @@
 ## Table of Contents
 
 ## **1. Database Fundamentals**
-   * **1.1 Introduction to Databases**
-      * 1.1.1 What is a Database?
-      * 1.1.2 DBMS vs RDBMS
-      * 1.1.3 SQL vs NoSQL
-   * **1.2 Database Design Concepts**
-      * 1.2.1 Entity–Relationship (ER) Diagrams
-      * 1.2.2 Entities, Attributes, and Relationships
-      * 1.2.3 Cardinality and Participation Constraints
-   * **1.3 Database Relationships**
-      * 1.3.1 One-to-One (1:1)
-      * 1.3.2 One-to-Many (1:N)
-      * 1.3.3 Many-to-Many (M:N)
-      * 1.3.4 Junction/Bridge Tables
+   * **[1.1 Database Design Concepts](01-01-db-design.md)**
+      * 1.1.1 Entity–Relationship (ER) Diagrams
+      * 1.1.2 Entities, Attributes, and Relationships
+      * 1.1.3 Cardinality and Participation Constraints
+   * **[1.2 Database Relationships](01-02-db-relationships.md)**
+      * 1.2.1 One-to-One (1:1)
+      * 1.2.2 One-to-Many (1:N)
+      * 1.2.3 Many-to-Many (M:N)
+      * 1.2.4 Junction/Bridge Tables
 
-## **2. Database Schema & Keys**
-   * **2.1 Primary Keys**
+## **[2. Database Schema & Keys](02-db-schema-keys.md)**
+   * **[2.1 Primary Keys](02-db-schema-keys.md#21-primary-keys)**
       * 2.1.1 Definition and Purpose
       * 2.1.2 Natural vs Surrogate Keys
       * 2.1.3 Composite Primary Keys
       * 2.1.4 AUTO_INCREMENT/SERIAL
-   * **2.2 Foreign Keys**
+   * **[2.2 Foreign Keys](02-db-schema-keys.md#22-foreign-keys)**
       * 2.2.1 Definition and Purpose
       * 2.2.2 Referential Integrity
       * 2.2.3 CASCADE, SET NULL, RESTRICT
       * 2.2.4 Self-Referencing Foreign Keys
-   * **2.3 Other Key Types**
+   * **[2.3 Other Key Types](02-db-schema-keys.md#23-other-key-types)**
       * 2.3.1 Unique Keys
       * 2.3.2 Candidate Keys
       * 2.3.3 Alternate Keys
