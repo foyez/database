@@ -1567,8 +1567,16 @@ GROUP BY user_id, product_name;
 
 ### 2.3.3 HAVING vs WHERE
 
-**WHERE:** Filters rows BEFORE grouping
-**HAVING:** Filters groups AFTER grouping
+- **WHERE:** Filters rows BEFORE grouping
+- **HAVING:** Filters groups AFTER grouping
+
+```sql
+SELECT department, COUNT(*) AS emp_count
+FROM employees
+WHERE salary > 50000      -- filters rows first
+GROUP BY department
+HAVING COUNT(*) > 5;      -- filters groups
+```
 
 ```sql
 -- Sample data
